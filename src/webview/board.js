@@ -3413,79 +3413,6 @@ async function openDetail(card) {
         return;
     }
 
-    // Helper to format dependency: last 20 chars of ID + ": " + Title
-    const formatDep = (dep) => {
-        const idSuffix = dep.id ? dep.id.slice(-20) : '';
-        const title = dep.title || '';
-        return `${escapeHtml(idSuffix)}: ${escapeHtml(title)}`;
-    };
-
-    const issueOptionsId = "issueIdOptions";
-
-    const renderStructureSection = () => `
-                         <label style="font-size: 10px; color: var(--muted); text-transform: uppercase;">Structure</label>
-                         
-                         <!-- Parent -->
-                         <div style="margin-bottom: 8px;">
-                            <div style="font-size: 11px; color: var(--muted); margin-bottom: 2px;">Parent:
-                                ${card.parent ? `
-                                    <span style="color: var(--vscode-editor-foreground);">${formatDep(card.parent)}</span>
-                                    <span id="removeParent" data-id="${escapeHtml(card.parent.id)}" style="cursor: pointer; color: var(--error); margin-left: 4px;">(Unlink)</span>
-                                ` : '<span style="font-style:italic;">None</span>'}
-                            </div>
-                            ${!card.parent ? `
-                                <div style="display: flex; gap: 4px; max-width: 100%; width: 100%; box-sizing: border-box;">
-                                    <input id="newParentId" type="text" placeholder="Parent Issue ID" list="${issueOptionsId}" style="flex: 1; margin: 0; font-size: 12px; padding: 4px; min-width: 0; max-width: 100%; box-sizing: border-box;" />
-                                    <button id="btnSetParent" class="btn" style="padding: 2px 8px; flex-shrink: 0;">Set</button>
-                                </div>
-                            ` : ''}
-                         </div>
-
-                         <!-- Blocker -->
-                          <div style="font-size: 11px; color: var(--muted); margin-bottom: 2px;">Blocked By:</div>
-                          ${(card.blocked_by && card.blocked_by.length > 0) ? `
-                          <ul style="margin: 0; padding-left: 16px; font-size: 11px; margin-bottom: 4px;">
-                            ${card.blocked_by.map(b => `
-                                <li>
-                                    ${formatDep(b)}
-                                    <span class="remove-blocker" data-id="${escapeHtml(b.id)}" style="cursor: pointer; color: var(--error); margin-left: 4px;">&times;</span>
-                                </li>
-                            `).join('')}
-                          </ul>
-                          ` : '<div style="font-size: 11px; font-style: italic; color: var(--muted); margin-bottom: 4px;">None</div>'}
-                          <div style="display: flex; gap: 4px; max-width: 100%; width: 100%; box-sizing: border-box;">
-                                <input id="newBlockerId" type="text" placeholder="Blocker Issue ID" list="${issueOptionsId}" style="flex: 1; margin: 0; font-size: 12px; padding: 4px; min-width: 0; max-width: 100%; box-sizing: border-box;" />
-                                <button id="btnAddBlocker" class="btn" style="padding: 2px 8px; flex-shrink: 0;">Add</button>
-                          </div>
-
-                          <!-- Blocks (issues this item blocks) -->
-                          <div style="font-size: 11px; color: var(--muted); margin-bottom: 2px; margin-top: 12px;">Blocks:</div>
-                          ${(card.blocks && card.blocks.length > 0) ? `
-                            <ul style="margin: 0; padding-left: 16px; font-size: 11px; margin-bottom: 4px;">
-                              ${card.blocks.map(b => `
-                                  <li>${formatDep(b)}</li>
-                              `).join('')}
-                            </ul>
-                          ` : '<div style="font-size: 11px; font-style: italic; color: var(--muted);">None</div>'}
-
-                          <!-- Children (sub-issues) -->
-                          <div style="font-size: 11px; color: var(--muted); margin-bottom: 2px; margin-top: 12px;">Children:</div>
-                          ${(card.children && card.children.length > 0) ? `
-                            <ul style="margin: 0; padding-left: 16px; font-size: 11px; margin-bottom: 4px;">
-                              ${card.children.map(c => `
-                                  <li>
-                                      ${formatDep(c)}
-                                      <span class="remove-child" data-id="${escapeHtml(c.id)}" style="cursor: pointer; color: var(--error); margin-left: 4px;">&times;</span>
-                                  </li>
-                              `).join('')}
-                            </ul>
-                          ` : '<div style="font-size: 11px; font-style: italic; color: var(--muted); margin-bottom: 4px;">None</div>'}
-                          <div style="display: flex; gap: 4px; max-width: 100%; width: 100%; box-sizing: border-box;">
-                                <input id="newChildId" type="text" placeholder="Child Issue ID" list="${issueOptionsId}" style="flex: 1; margin: 0; font-size: 12px; padding: 4px; min-width: 0; max-width: 100%; box-sizing: border-box;" />
-                                <button id="btnAddChild" class="btn" style="padding: 2px 8px; flex-shrink: 0;">Add</button>
-                          </div>
-    `;
-
     populateStaticEditForm(form, card, isCreateMode);
 
     // Snapshot the form as loaded so save can send only what changed.
@@ -3832,10 +3759,12 @@ async function openDetail(card) {
     }
 
     function refreshStructureSection() {
-        const structure = form.querySelector("#structureSection");
-        if (!structure) return;
-        // Apply DOMPurify for defense-in-depth
-        structure.innerHTML = DOMPurify.sanitize(renderStructureSection(), purifyConfig);
+        refreshStaticFormRelationships(form, card);
+        ["#newParentId", "#newBlockerId", "#newChildId"].forEach((sel) => {
+            const input = form.querySelector(sel);
+            if (input) input.value = "";
+        });
+        // Re-rendering the lists drops the .remove-blocker / .remove-child handlers.
         bindStructureEvents();
     }
 
