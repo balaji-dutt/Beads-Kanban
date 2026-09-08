@@ -499,6 +499,13 @@ body {
     min-height: 0;
 }
 
+/* Chromium makes scroll containers focusable (showModal focus delegation,
+   focus restore) and paints their UA ring in the OS accent colour. */
+.dialogForm:focus,
+.edit-form-container:focus {
+    outline: none;
+}
+
 .dialogForm input,
 .dialogForm textarea,
 .dialogForm select {
