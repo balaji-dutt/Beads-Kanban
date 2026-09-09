@@ -1,4 +1,17 @@
 import { z } from 'zod';
+import {
+  STATUS_ALL_VALUES,
+  STATUS_ACTIVE_VALUES,
+  PRIORITY_ALL_VALUES,
+  TYPE_ALL_VALUES
+} from './filterUniverse';
+
+export {
+  STATUS_ALL_VALUES,
+  STATUS_ACTIVE_VALUES,
+  PRIORITY_ALL_VALUES,
+  TYPE_ALL_VALUES
+};
 
 export type IssueStatus = "open" | "in_progress" | "blocked" | "closed";
 
@@ -339,21 +352,6 @@ export const BoardLoadMoreSchema = z.object({
   column: BoardColumnKeySchema
 });
 
-// Toolbar filter universe constants. These define which values appear in each
-// top-bar dropdown and back the inclusive-multiselect semantics:
-//   - selected = []         → "None" (no issues match this filter)
-//   - selected = full set   → "All" (the preset row appears checked)
-//   - selected = STATUS_ACTIVE → "Active" preset (Status only; mirrors `bd list`)
-//   - selected = anything else → that explicit subset
-export const STATUS_ALL_VALUES = [
-  'open', 'in_progress', 'blocked', 'deferred', 'closed', 'tombstone', 'pinned'
-] as const;
-export const STATUS_ACTIVE_VALUES = [
-  'open', 'in_progress', 'blocked', 'deferred'
-] as const;
-export const PRIORITY_ALL_VALUES = ['0', '1', '2', '3'] as const;
-export const TYPE_ALL_VALUES = ['task', 'bug', 'feature', 'epic', 'chore'] as const;
-
 // Persisted UI state — mirrors the fields the webview's saveState() writes today.
 // Used for cross-session persistence via context.workspaceState (per-workspace).
 // tableFilters shape is intentionally permissive so future filter changes can land
@@ -377,11 +375,11 @@ export const UIStateSchema = z.object({
     type: z.array(z.string().max(50)).max(20).optional(),
     status: z.array(z.string().max(50)).max(20).optional()
   }).optional(),
-  // Version stamp for the topBarFilters shape. Payloads without this field
-  // come from an older build where an empty filter array meant "All" rather
-  // than "None"; migrateUIState() upgrades those before they reach the
-  // webview so the legacy semantics aren't carried into the new model.
-  topBarFiltersVersion: z.literal(2).optional(),
+  // Version stamp for the topBarFilters shape. Version 1 (the field absent)
+  // used an empty filter array as the sentinel for "All"; version 2 shares the
+  // current semantics but predates P4 in the priority universe. migrateUIState()
+  // upgrades both before they reach the webview.
+  topBarFiltersVersion: z.literal(3).optional(),
   // Tree view sibling-sort spec. Sorting applies within each parent's
   // children; the hierarchy itself is never reordered.
   treeSort: z.object({
@@ -403,23 +401,39 @@ export const UIStateSchema = z.object({
 
 export type UIState = z.infer<typeof UIStateSchema>;
 
-// Upgrade a persisted UI-state payload from the older filter semantics to the
-// current one. The older shape used an empty filter array as a sentinel for
-// "All selected"; the current shape uses an empty array to mean "None
-// selected". Without this migration, a workspace persisted by an older build
-// would render an empty board the first time the user opened it after upgrade.
+// The priority universe as version 2 knew it. Frozen on purpose: it is the
+// yardstick for recognising a stored "All" selection from that era, so it must
+// not track later additions to PRIORITY_ALL_VALUES.
+const PRIORITY_V2_VALUES: readonly string[] = ['0', '1', '2', '3'];
+
+// Upgrade a persisted UI-state payload to the current topBarFilters shape.
+//
+// Version 1 (no version stamp) used an empty filter array as a sentinel for
+// "All selected", where the current shape reads an empty array as "None
+// selected". Left alone, a workspace persisted by such a build renders an
+// empty board the first time the user opens it after upgrading.
+//
+// Version 2 shares the current semantics but predates P4 in the priority
+// universe. "All" is derived by set-equality, so a stored ['0','1','2','3']
+// now reads as an explicit 4-of-5 subset and keeps P4 hidden. Widening it is
+// safe because P4 had no checkbox then, so that exact set can only have meant
+// "All".
 //
 // Behavior:
 //   - Non-object input → returned as-is (defensive; safeParse will reject).
-//   - topBarFiltersVersion === 2 → returned as-is (already current).
-//   - Otherwise → each empty array under topBarFilters is expanded to the
-//     corresponding full universe, and topBarFiltersVersion: 2 is stamped.
+//   - topBarFiltersVersion === 3 → returned as-is (already current).
+//   - Version 1 only → each empty array under topBarFilters is expanded to the
+//     corresponding full universe.
+//   - Versions 1 and 2 → a priority selection equal to the version 2 universe
+//     is widened to PRIORITY_ALL_VALUES. A proper subset and an empty array
+//     are deliberate choices and are left alone.
+//   - topBarFiltersVersion: 3 is stamped.
 //
 // Pure; does not mutate the input.
 export function migrateUIState(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { return raw; }
   const state = raw as Record<string, unknown>;
-  if (state.topBarFiltersVersion === 2) { return state; }
+  if (state.topBarFiltersVersion === 3) { return state; }
 
   const result: Record<string, unknown> = { ...state };
   const topBar = state.topBarFilters;
@@ -427,18 +441,30 @@ export function migrateUIState(raw: unknown): unknown {
     const tb = topBar as Record<string, unknown>;
     const migratedTopBar: Record<string, unknown> = { ...tb };
     const expandIfEmpty = (key: string, universe: readonly string[]): void => {
-      const value = tb[key];
+      const value = migratedTopBar[key];
       if (Array.isArray(value) && value.length === 0) {
         migratedTopBar[key] = [...universe];
       }
     };
-    expandIfEmpty('priority', PRIORITY_ALL_VALUES);
-    expandIfEmpty('type', TYPE_ALL_VALUES);
-    expandIfEmpty('status', STATUS_ALL_VALUES);
+    if (state.topBarFiltersVersion !== 2) {
+      expandIfEmpty('priority', PRIORITY_ALL_VALUES);
+      expandIfEmpty('type', TYPE_ALL_VALUES);
+      expandIfEmpty('status', STATUS_ALL_VALUES);
+    }
+    const priority = migratedTopBar.priority;
+    if (Array.isArray(priority) && setEquals(priority, PRIORITY_V2_VALUES)) {
+      migratedTopBar.priority = [...PRIORITY_ALL_VALUES];
+    }
     result.topBarFilters = migratedTopBar;
   }
-  result.topBarFiltersVersion = 2;
+  result.topBarFiltersVersion = 3;
   return result;
+}
+
+function setEquals(a: readonly unknown[], b: readonly string[]): boolean {
+  if (a.length !== b.length) { return false; }
+  const seen = new Set(a);
+  return seen.size === b.length && b.every(v => seen.has(v));
 }
 
 export const TableLoadPageSchema = z.object({

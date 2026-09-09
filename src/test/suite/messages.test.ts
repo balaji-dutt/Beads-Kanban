@@ -322,16 +322,17 @@ suite('Message Validation Tests', () => {
         assert.ok(!result.success, 'topBarFilters entries must be arrays');
     });
 
-    test('UIStateSchema: topBarFiltersVersion accepts literal 2', () => {
-        const valid = { topBarFiltersVersion: 2 };
+    test('UIStateSchema: topBarFiltersVersion accepts literal 3', () => {
+        const valid = { topBarFiltersVersion: 3 };
         const result = UIStateSchema.safeParse(valid);
-        assert.ok(result.success, 'topBarFiltersVersion: 2 should pass');
+        assert.ok(result.success, 'topBarFiltersVersion: 3 should pass');
     });
 
-    test('UIStateSchema: topBarFiltersVersion rejects other numbers', () => {
-        const invalid = { topBarFiltersVersion: 1 };
-        const result = UIStateSchema.safeParse(invalid);
-        assert.ok(!result.success, 'topBarFiltersVersion must be the literal 2');
+    test('UIStateSchema: topBarFiltersVersion rejects superseded versions', () => {
+        for (const version of [1, 2, 4]) {
+            const result = UIStateSchema.safeParse({ topBarFiltersVersion: version });
+            assert.ok(!result.success, `topBarFiltersVersion ${version} should be rejected`);
+        }
     });
 
     test('UIStateSchema: viewMode accepts tree', () => {
@@ -395,7 +396,7 @@ suite('Message Validation Tests', () => {
             tableColumnOrder: ['id', 'title', 'priority'],
             tableFilters: { search: 'foo', labels: ['bug'] },
             topBarFilters: { priority: ['0'], type: ['bug'], status: ['open'] },
-            topBarFiltersVersion: 2
+            topBarFiltersVersion: 3
         };
         const result = UIStateSchema.safeParse(legacy);
         assert.ok(result.success, 'Payload without tree fields should still pass');
@@ -415,18 +416,49 @@ suite('migrateUIState', () => {
         assert.strictEqual(migrateUIState(input), input);
     });
 
-    test('Version-2 payload passes through with no modification', () => {
+    test('Version-3 payload passes through untouched', () => {
+        const v3 = {
+            topBarFiltersVersion: 3,
+            topBarFilters: { priority: [], type: [], status: [] }
+        };
+        assert.strictEqual(migrateUIState(v3), v3);
+    });
+
+    test('Version-2 payload: empty arrays stay empty ("None" is a deliberate choice)', () => {
         const v2 = {
             topBarFiltersVersion: 2,
             topBarFilters: { priority: [], type: [], status: [] }
         };
         const out = migrateUIState(v2) as Record<string, unknown>;
-        // Empty arrays preserved → current-shape "None" intent honored.
         const tb = out.topBarFilters as Record<string, unknown>;
         assert.deepStrictEqual(tb.priority, []);
         assert.deepStrictEqual(tb.type, []);
         assert.deepStrictEqual(tb.status, []);
-        assert.strictEqual(out.topBarFiltersVersion, 2);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
+    });
+
+    test('Version-2 payload: a priority selection of P0-P3 widens to include P4', () => {
+        const v2 = {
+            topBarFiltersVersion: 2,
+            topBarFilters: { priority: ['0', '1', '2', '3'], type: ['bug'], status: ['open'] }
+        };
+        const out = migrateUIState(v2) as Record<string, unknown>;
+        const tb = out.topBarFilters as Record<string, unknown>;
+        assert.deepStrictEqual(tb.priority, [...PRIORITY_ALL_VALUES]);
+        assert.deepStrictEqual(tb.type, ['bug'], 'Other filters must be left alone');
+        assert.deepStrictEqual(tb.status, ['open']);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
+    });
+
+    test('Version-2 payload: a proper priority subset is left alone', () => {
+        const v2 = {
+            topBarFiltersVersion: 2,
+            topBarFilters: { priority: ['0', '1'] }
+        };
+        const out = migrateUIState(v2) as Record<string, unknown>;
+        const tb = out.topBarFilters as Record<string, unknown>;
+        assert.deepStrictEqual(tb.priority, ['0', '1']);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
     });
 
     test('Legacy payload: empty arrays are expanded to full universes', () => {
@@ -438,7 +470,7 @@ suite('migrateUIState', () => {
         assert.deepStrictEqual(tb.priority, [...PRIORITY_ALL_VALUES]);
         assert.deepStrictEqual(tb.type, [...TYPE_ALL_VALUES]);
         assert.deepStrictEqual(tb.status, [...STATUS_ALL_VALUES]);
-        assert.strictEqual(out.topBarFiltersVersion, 2);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
     });
 
     test('Legacy payload: non-empty arrays are preserved verbatim, only empty arrays expand', () => {
@@ -454,7 +486,21 @@ suite('migrateUIState', () => {
         assert.deepStrictEqual(tb.priority, ['0', '1']);
         assert.deepStrictEqual(tb.type, [...TYPE_ALL_VALUES]);
         assert.deepStrictEqual(tb.status, ['open', 'in_progress']);
-        assert.strictEqual(out.topBarFiltersVersion, 2);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
+    });
+
+    test('Legacy payload: an explicit P0-P3 priority selection also widens to include P4', () => {
+        const legacy = {
+            topBarFilters: { priority: ['3', '0', '2', '1'] }
+        };
+        const out = migrateUIState(legacy) as Record<string, unknown>;
+        const tb = out.topBarFilters as Record<string, unknown>;
+        assert.deepStrictEqual(
+            tb.priority,
+            [...PRIORITY_ALL_VALUES],
+            'Set-equality, not order, decides whether a stored selection meant "All"'
+        );
+        assert.strictEqual(out.topBarFiltersVersion, 3);
     });
 
     test('Legacy payload without topBarFilters: stamps version but adds no filter data', () => {
@@ -462,7 +508,7 @@ suite('migrateUIState', () => {
         const out = migrateUIState(legacy) as Record<string, unknown>;
         assert.strictEqual(out.viewMode, 'kanban');
         assert.deepStrictEqual(out.collapsedColumns, ['blocked']);
-        assert.strictEqual(out.topBarFiltersVersion, 2);
+        assert.strictEqual(out.topBarFiltersVersion, 3);
         assert.strictEqual(out.topBarFilters, undefined);
     });
 
@@ -483,6 +529,30 @@ suite('migrateUIState', () => {
         const inputCopy = JSON.parse(JSON.stringify(input));
         migrateUIState(input);
         assert.deepStrictEqual(input, inputCopy, 'Input must not be mutated');
+    });
+
+    test('PRIORITY_ALL_VALUES covers exactly the range IssueCreateSchema accepts', () => {
+        // The filter universe is what the toolbar can select; the schema is what
+        // bd will store. A priority the schema accepts but the universe omits is
+        // invisible in every view.
+        for (let priority = 0; priority <= 4; priority++) {
+            assert.ok(
+                IssueCreateSchema.safeParse({ title: 'Test', priority }).success,
+                `IssueCreateSchema should accept priority ${priority}`
+            );
+            assert.ok(
+                (PRIORITY_ALL_VALUES as readonly string[]).includes(String(priority)),
+                `PRIORITY_ALL_VALUES must contain "${priority}" or P${priority} cards cannot be shown`
+            );
+        }
+        assert.strictEqual(
+            PRIORITY_ALL_VALUES.length, 5,
+            'PRIORITY_ALL_VALUES must hold P0-P4 and nothing else'
+        );
+        assert.ok(
+            !IssueCreateSchema.safeParse({ title: 'Test', priority: 5 }).success,
+            'IssueCreateSchema should reject priority 5'
+        );
     });
 
     test('STATUS_ACTIVE_VALUES is a strict subset of STATUS_ALL_VALUES', () => {

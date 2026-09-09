@@ -1,6 +1,46 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { getWebviewHtml } from '../../webview';
+import {
+    STATUS_ALL_VALUES,
+    STATUS_ACTIVE_VALUES,
+    PRIORITY_ALL_VALUES,
+    TYPE_ALL_VALUES
+} from '../../filterUniverse';
+
+// Pull the value rows out of a filter dropdown, skipping the derived preset
+// rows ("All" / "Active") which carry no filter value of their own.
+function dropdownValues(html: string, dropdownId: string): string[] {
+    const block = html.match(
+        new RegExp(`<div id="${dropdownId}"[^>]*>([\\s\\S]*?)</div>`)
+    );
+    assert.ok(block, `Should have a ${dropdownId} block`);
+    return [...block[1].matchAll(/<input([^>]*)\/>/g)]
+        .filter(m => !m[1].includes('data-preset'))
+        .map(m => {
+            const value = m[1].match(/value="([^"]*)"/);
+            assert.ok(value, `Row in ${dropdownId} should carry a value attribute`);
+            return value[1];
+        });
+}
+
+function dropdownCheckedValues(html: string, dropdownId: string): string[] {
+    const block = html.match(
+        new RegExp(`<div id="${dropdownId}"[^>]*>([\\s\\S]*?)</div>`)
+    );
+    assert.ok(block, `Should have a ${dropdownId} block`);
+    return [...block[1].matchAll(/<input([^>]*)\/>/g)]
+        .filter(m => !m[1].includes('data-preset') && m[1].includes('checked'))
+        .map(m => (m[1].match(/value="([^"]*)"/) as RegExpMatchArray)[1]);
+}
+
+function selectValues(html: string, selectId: string): string[] {
+    const block = html.match(
+        new RegExp(`<select id="${selectId}"[^>]*>([\\s\\S]*?)</select>`)
+    );
+    assert.ok(block, `Should have a ${selectId} select`);
+    return [...block[1].matchAll(/<option value="([^"]*)"/g)].map(m => m[1]);
+}
 
 suite('Table View Tests', () => {
     let mockWebview: vscode.Webview;
@@ -59,10 +99,12 @@ suite('Table View Tests', () => {
             assert.ok(html.includes('id="filterPriorityBtn"'), 'Should have priority filter button');
             assert.ok(html.includes('id="filterPriorityDropdown"'), 'Should have priority dropdown');
             assert.ok(html.includes('Priority: All'), 'Should have All label');
-            assert.ok(html.includes('>P0<') || html.includes('> P0<'), 'Should have P0 option');
-            assert.ok(html.includes('>P1<') || html.includes('> P1<'), 'Should have P1 option');
-            assert.ok(html.includes('>P2<') || html.includes('> P2<'), 'Should have P2 option');
-            assert.ok(html.includes('>P3<') || html.includes('> P3<'), 'Should have P3 option');
+            for (const value of PRIORITY_ALL_VALUES) {
+                assert.ok(
+                    html.includes(`> P${value}</label>`),
+                    `Should have a P${value} row`
+                );
+            }
         });
 
         test('Has type filter dropdown', () => {
@@ -88,6 +130,53 @@ suite('Table View Tests', () => {
             const newBtn = html.match(/<button[^>]*id="newBtn"[^>]*>/);
             assert.ok(newBtn, 'Should have new button element');
             assert.ok(newBtn[0].includes('primary'), 'New button should have primary class');
+        });
+    });
+
+    // The filter dropdowns and the dialog selects are generated from
+    // src/filterUniverse.ts. These pin the generated markup to those constants:
+    // a value offered in one place and not the other means issues at that value
+    // can be set but never filtered back into view.
+    suite('Filter universe vs generated markup', () => {
+        test('Priority dropdown rows match PRIORITY_ALL_VALUES', () => {
+            const html = getWebviewHtml(mockWebview, mockUri);
+            assert.deepStrictEqual(
+                dropdownValues(html, 'filterPriorityDropdown'),
+                [...PRIORITY_ALL_VALUES]
+            );
+        });
+
+        test('Priority dropdown boots with every value checked (the All preset)', () => {
+            const html = getWebviewHtml(mockWebview, mockUri);
+            assert.deepStrictEqual(
+                dropdownCheckedValues(html, 'filterPriorityDropdown'),
+                [...PRIORITY_ALL_VALUES]
+            );
+        });
+
+        test('Edit-dialog priority options match the filter universe', () => {
+            const html = getWebviewHtml(mockWebview, mockUri);
+            assert.deepStrictEqual(
+                selectValues(html, 'editPriority'),
+                [...PRIORITY_ALL_VALUES],
+                'A priority the dialog can set must be one the toolbar can select'
+            );
+        });
+
+        test('Type dropdown rows and edit-dialog type options match TYPE_ALL_VALUES', () => {
+            const html = getWebviewHtml(mockWebview, mockUri);
+            assert.deepStrictEqual(dropdownValues(html, 'filterTypeDropdown'), [...TYPE_ALL_VALUES]);
+            assert.deepStrictEqual(selectValues(html, 'editType'), [...TYPE_ALL_VALUES]);
+        });
+
+        test('Status dropdown rows match STATUS_ALL_VALUES and boot at the Active subset', () => {
+            const html = getWebviewHtml(mockWebview, mockUri);
+            assert.deepStrictEqual(dropdownValues(html, 'filterStatusDropdown'), [...STATUS_ALL_VALUES]);
+            assert.deepStrictEqual(
+                dropdownCheckedValues(html, 'filterStatusDropdown'),
+                [...STATUS_ACTIVE_VALUES],
+                'First load mirrors `bd list`, which excludes closed'
+            );
         });
     });
 

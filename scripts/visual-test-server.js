@@ -849,7 +849,12 @@ function getThemeCss(theme) {
 
 /**
  * Generate the standalone HTML page.
- * This mirrors the structure from src/webview.ts but adapted for standalone use:
+ * This mirrors the structure from src/webview.ts but adapted for standalone use.
+ * The filter-dropdown rows and dialog selects there are generated from
+ * src/filterUniverse.ts; this harness cannot import that module (plain CommonJS,
+ * no build step of its own), so the rows below are transcribed and must be
+ * updated by hand when a universe gains a value.
+ * Other differences:
  * - No CSP nonce (not in VS Code sandbox)
  * - Mock acquireVsCodeApi injected before board.js
  * - VS Code theme CSS variables injected
@@ -916,6 +921,7 @@ function generateHtml() {
 '            <label class="status-option"><input type="checkbox" value="1" checked /> P1</label>\n' +
 '            <label class="status-option"><input type="checkbox" value="2" checked /> P2</label>\n' +
 '            <label class="status-option"><input type="checkbox" value="3" checked /> P3</label>\n' +
+'            <label class="status-option"><input type="checkbox" value="4" checked /> P4</label>\n' +
 '          </div>\n' +
 '        </div>\n' +
 '        <div class="status-filter-wrapper">\n' +

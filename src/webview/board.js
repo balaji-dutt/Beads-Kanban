@@ -14,6 +14,12 @@ import {
     formatPriorityValue
 } from './filterStateMachine';
 import {
+    STATUS_ALL_VALUES,
+    STATUS_ACTIVE_VALUES,
+    PRIORITY_ALL_VALUES,
+    TYPE_ALL_VALUES
+} from '../filterUniverse';
+import {
     buildDisplayTree,
     flattenVisibleRows,
     defaultExpanded,
@@ -134,28 +140,25 @@ setupBoardEventDelegation();
 // the corresponding universe / subset.
 //
 // State-machine transitions live in src/webview/filterStateMachine.ts so
-// they can be unit-tested without a DOM. The code below is the glue that
-// reads/writes checkboxes and labels.
-
-const STATUS_ALL = ['open', 'in_progress', 'blocked', 'deferred', 'closed', 'tombstone', 'pinned'];
-const STATUS_ACTIVE = ['open', 'in_progress', 'blocked', 'deferred'];
-const PRIORITY_ALL = ['0', '1', '2', '3'];
-const TYPE_ALL = ['task', 'bug', 'feature', 'epic', 'chore'];
+// they can be unit-tested without a DOM. The values themselves live in
+// src/filterUniverse.ts, shared with the extension host so the dropdown rows
+// generated there and the selections read here cannot diverge. The code below
+// is the glue that reads/writes checkboxes and labels.
 
 const STATUS_UNIVERSE = {
     prefix: 'Status',
-    allValues: STATUS_ALL,
-    activeValues: STATUS_ACTIVE,
+    allValues: STATUS_ALL_VALUES,
+    activeValues: STATUS_ACTIVE_VALUES,
     formatValue: formatStatusValue
 };
 const PRIORITY_UNIVERSE = {
     prefix: 'Priority',
-    allValues: PRIORITY_ALL,
+    allValues: PRIORITY_ALL_VALUES,
     formatValue: formatPriorityValue
 };
 const TYPE_UNIVERSE = {
     prefix: 'Type',
-    allValues: TYPE_ALL,
+    allValues: TYPE_ALL_VALUES,
     formatValue: formatTypeValue
 };
 
@@ -284,9 +287,9 @@ wireFilterDropdown(filterStatusBtn, filterStatusDropdown, STATUS_UNIVERSE, updat
 // Called once at boot before persisted state arrives (so persisted state
 // still wins) and again by the Clear Filters button.
 function initFilterDefaults() {
-    writeSelection(filterStatusDropdown, STATUS_UNIVERSE, [...STATUS_ACTIVE]);
-    writeSelection(filterPriorityDropdown, PRIORITY_UNIVERSE, [...PRIORITY_ALL]);
-    writeSelection(filterTypeDropdown, TYPE_UNIVERSE, [...TYPE_ALL]);
+    writeSelection(filterStatusDropdown, STATUS_UNIVERSE, [...STATUS_ACTIVE_VALUES]);
+    writeSelection(filterPriorityDropdown, PRIORITY_UNIVERSE, [...PRIORITY_ALL_VALUES]);
+    writeSelection(filterTypeDropdown, TYPE_UNIVERSE, [...TYPE_ALL_VALUES]);
     updateStatusLabel();
     updatePriorityLabel();
     updateTypeLabel();
@@ -686,7 +689,7 @@ function saveState() {
         tableColumnOrder: tableState.columnOrder,
         tableFilters: tableState.filters,
         topBarFilters: getTopBarFilterValues(),
-        topBarFiltersVersion: 2,
+        topBarFiltersVersion: 3,
         treeSort: treeState.sort,
         treeExpanded: trimTreeExpanded(treeState.expandedOverrides)
     };
@@ -2052,9 +2055,9 @@ function renderTree() {
     // branch with active descendants on a fresh board, defeating the
     // one-level default expansion.
     const searchActive = !!(filterSearch && filterSearch.value && filterSearch.value.trim());
-    const filtersAtDefaults = selectionEquals(getSelectedStatuses(), STATUS_ACTIVE)
-        && selectionEquals(readSelectedStrings(filterPriorityDropdown), PRIORITY_ALL)
-        && selectionEquals(getSelectedTypes(), TYPE_ALL);
+    const filtersAtDefaults = selectionEquals(getSelectedStatuses(), STATUS_ACTIVE_VALUES)
+        && selectionEquals(readSelectedStrings(filterPriorityDropdown), PRIORITY_ALL_VALUES)
+        && selectionEquals(getSelectedTypes(), TYPE_ALL_VALUES);
     const filterActive = searchActive || !filtersAtDefaults;
     const roots = buildDisplayTree([...cardCache.values()], matchedIds, treeState.sort);
     const rows = flattenVisibleRows(roots, isTreeNodeExpanded, filterActive);

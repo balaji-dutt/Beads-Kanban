@@ -9,11 +9,17 @@ import {
     formatPriorityValue,
     FilterUniverse
 } from '../../webview/filterStateMachine';
+import {
+    STATUS_ALL_VALUES,
+    STATUS_ACTIVE_VALUES,
+    PRIORITY_ALL_VALUES,
+    TYPE_ALL_VALUES
+} from '../../filterUniverse';
 
-const STATUS_ALL = ['open', 'in_progress', 'blocked', 'deferred', 'closed', 'tombstone', 'pinned'];
-const STATUS_ACTIVE = ['open', 'in_progress', 'blocked', 'deferred'];
-const PRIORITY_ALL = ['0', '1', '2', '3'];
-const TYPE_ALL = ['task', 'bug', 'feature', 'epic', 'chore'];
+const STATUS_ALL: readonly string[] = STATUS_ALL_VALUES;
+const STATUS_ACTIVE: readonly string[] = STATUS_ACTIVE_VALUES;
+const PRIORITY_ALL: readonly string[] = PRIORITY_ALL_VALUES;
+const TYPE_ALL: readonly string[] = TYPE_ALL_VALUES;
 
 const STATUS: FilterUniverse = {
     prefix: 'Status',
