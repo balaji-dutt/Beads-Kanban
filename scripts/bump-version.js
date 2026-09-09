@@ -87,5 +87,5 @@ process.stdout.write(
   `  ✓ package.json\n` +
   `  ✓ src/webview.ts\n` +
   `  ✓ CHANGELOG.md heading present\n\n` +
-  `Next:  npm run release:package\n\n`
+  `Next:  bash scripts/release-fork-vsix.sh --dry-run\n\n`
 );

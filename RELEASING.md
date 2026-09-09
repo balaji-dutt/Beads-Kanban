@@ -126,9 +126,6 @@ those tags stay reproducible). The regex is duplicated in
 `scripts/bump-version.js` and `scripts/release-fork-vsix.sh` — change one and you
 must change the other.
 
-> `release:bump` prints `Next: npm run release:package` on success. Ignore that
-> for a fork release; see the trap below.
-
 ### 3. Dry run
 
 ```bash
