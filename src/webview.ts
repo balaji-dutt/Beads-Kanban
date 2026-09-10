@@ -1,36 +1,12 @@
 import * as vscode from "vscode";
 import * as crypto from "crypto";
 import {
-  STATUS_ALL_VALUES,
-  STATUS_ACTIVE_VALUES,
-  PRIORITY_ALL_VALUES,
-  TYPE_ALL_VALUES
-} from "./filterUniverse";
-import {
-  formatStatusValue,
-  formatTypeValue,
-  formatPriorityValue
-} from "./webview/filterStateMachine";
-
-// The filter dropdowns and the edit-dialog selects are built from the shared
-// universes so a value can never appear in one and not the other. Every value
-// here is a compile-time constant, so none of it needs escaping.
-
-function filterOption(value: string, label: string, checked: boolean): string {
-  return `<label class="status-option"><input type="checkbox" value="${value}"${checked ? ' checked' : ''} /> ${label}</label>`;
-}
-
-function presetOption(preset: string, label: string, checked: boolean): string {
-  return `<label class="status-option"><input type="checkbox" value="" data-preset="${preset}"${checked ? ' checked' : ''} /> ${label}</label>`;
-}
-
-function selectOption(value: string, label: string): string {
-  return `<option value="${value}">${label}</option>`;
-}
-
-function renderRows(rows: string[], indent: string): string {
-  return rows.join(`\n${indent}`);
-}
+  buildPriorityFilterRows,
+  buildTypeFilterRows,
+  buildStatusFilterRows,
+  buildEditPriorityOptions,
+  buildEditTypeOptions
+} from "./filterMarkup";
 
 export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   // Use package version for cache-busting (production-friendly, changes only on updates)
@@ -51,33 +27,12 @@ export function getWebviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri
   const modKey = isMac ? '⌘' : 'Ctrl';
 
   const rowIndent = ' '.repeat(12);
-  const priorityFilterRows = renderRows([
-    presetOption('all', 'All', true),
-    ...PRIORITY_ALL_VALUES.map(v => filterOption(v, formatPriorityValue(v), true))
-  ], rowIndent);
-  const typeFilterRows = renderRows([
-    presetOption('all', 'All', true),
-    ...TYPE_ALL_VALUES.map(v => filterOption(v, formatTypeValue(v), true))
-  ], rowIndent);
-  // Status boots at the "Active" preset, mirroring `bd list`, so only the
-  // active values start checked.
-  const statusFilterRows = renderRows([
-    presetOption('all', 'All', false),
-    presetOption('active', 'Active', true),
-    ...STATUS_ALL_VALUES.map(v => filterOption(
-      v,
-      formatStatusValue(v),
-      (STATUS_ACTIVE_VALUES as readonly string[]).includes(v)
-    ))
-  ], rowIndent);
-  const editPriorityOptions = renderRows(
-    PRIORITY_ALL_VALUES.map(v => selectOption(v, formatPriorityValue(v))),
-    ' '.repeat(14)
-  );
-  const editTypeOptions = renderRows(
-    TYPE_ALL_VALUES.map(v => selectOption(v, v)),
-    ' '.repeat(14)
-  );
+  const optionIndent = ' '.repeat(14);
+  const priorityFilterRows = buildPriorityFilterRows(rowIndent);
+  const typeFilterRows = buildTypeFilterRows(rowIndent);
+  const statusFilterRows = buildStatusFilterRows(rowIndent);
+  const editPriorityOptions = buildEditPriorityOptions(optionIndent);
+  const editTypeOptions = buildEditTypeOptions(optionIndent);
 
   return `<!DOCTYPE html>
 <!-- Forced No-Quirks Mode -->

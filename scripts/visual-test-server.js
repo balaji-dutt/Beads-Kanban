@@ -53,6 +53,36 @@ const childProcess = require('child_process');
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // ---------------------------------------------------------------------------
+// Shared filter markup
+// ---------------------------------------------------------------------------
+
+/**
+ * Load src/filterMarkup.ts so the served page builds its filter dropdowns and
+ * dialog selects from the same source as src/webview.ts.
+ *
+ * This script is plain CommonJS with no build step, so it transpiles the module
+ * in-process rather than importing it. Requiring out/filterMarkup.js instead
+ * would work only after `tsc -p .`; `npm run compile` uses esbuild and never
+ * emits it, so the server would break for anyone who only ran compile.
+ */
+function loadFilterMarkup() {
+  const esbuild = require('esbuild');
+  const built = esbuild.buildSync({
+    entryPoints: [path.join(PROJECT_ROOT, 'src', 'filterMarkup.ts')],
+    bundle: true,
+    format: 'cjs',
+    write: false,
+    platform: 'node',
+    logLevel: 'silent'
+  });
+  const mod = { exports: {} };
+  new Function('module', 'exports', built.outputFiles[0].text)(mod, mod.exports);
+  return mod.exports;
+}
+
+const filterMarkup = loadFilterMarkup();
+
+// ---------------------------------------------------------------------------
 // Argument parsing
 // ---------------------------------------------------------------------------
 const cliArgs = process.argv.slice(2);
@@ -851,11 +881,7 @@ function getThemeCss(theme) {
 /**
  * Generate the standalone HTML page.
  * This mirrors the structure from src/webview.ts but adapted for standalone use.
- * The filter-dropdown rows and dialog selects there are generated from
- * src/filterUniverse.ts; this harness cannot import that module (plain CommonJS,
- * no build step of its own), so the rows below are transcribed and must be
- * updated by hand when a universe gains a value.
- * Other differences:
+ * Differences:
  * - No CSP nonce (not in VS Code sandbox)
  * - Mock acquireVsCodeApi injected before board.js
  * - VS Code theme CSS variables injected
@@ -866,6 +892,8 @@ function generateHtml() {
   var mockCards = JSON.stringify(getBoardData()).replace(/<\//g, '<\\/');
   var themeCss = getThemeCss(THEME);
   var modKey = 'Ctrl';
+  var rowIndent = ' '.repeat(12);
+  var optionIndent = ' '.repeat(14);
 
   return '<!DOCTYPE html>\n' +
 '<!-- Beads Kanban - Standalone Visual Test Server -->\n' +
@@ -917,12 +945,7 @@ function generateHtml() {
 '            <span class="dropdown-arrow">&#x25BC;</span>\n' +
 '          </button>\n' +
 '          <div id="filterPriorityDropdown" class="status-dropdown hidden">\n' +
-'            <label class="status-option"><input type="checkbox" value="" data-preset="all" checked /> All</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="0" checked /> P0</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="1" checked /> P1</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="2" checked /> P2</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="3" checked /> P3</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="4" checked /> P4</label>\n' +
+'            ' + filterMarkup.buildPriorityFilterRows(rowIndent) + '\n' +
 '          </div>\n' +
 '        </div>\n' +
 '        <div class="status-filter-wrapper">\n' +
@@ -931,12 +954,7 @@ function generateHtml() {
 '            <span class="dropdown-arrow">&#x25BC;</span>\n' +
 '          </button>\n' +
 '          <div id="filterTypeDropdown" class="status-dropdown hidden">\n' +
-'            <label class="status-option"><input type="checkbox" value="" data-preset="all" checked /> All</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="task" checked /> Task</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="bug" checked /> Bug</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="feature" checked /> Feature</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="epic" checked /> Epic</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="chore" checked /> Chore</label>\n' +
+'            ' + filterMarkup.buildTypeFilterRows(rowIndent) + '\n' +
 '          </div>\n' +
 '        </div>\n' +
 '        <div class="status-filter-wrapper">\n' +
@@ -945,15 +963,7 @@ function generateHtml() {
 '            <span class="dropdown-arrow">&#x25BC;</span>\n' +
 '          </button>\n' +
 '          <div id="filterStatusDropdown" class="status-dropdown hidden">\n' +
-'            <label class="status-option"><input type="checkbox" value="" data-preset="all" /> All</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="" data-preset="active" checked /> Active</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="open" checked /> Open</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="in_progress" checked /> In Progress</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="blocked" checked /> Blocked</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="deferred" checked /> Deferred</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="closed" /> Closed</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="tombstone" /> Tombstone</label>\n' +
-'            <label class="status-option"><input type="checkbox" value="pinned" /> Pinned</label>\n' +
+'            ' + filterMarkup.buildStatusFilterRows(rowIndent) + '\n' +
 '          </div>\n' +
 '        </div>\n' +
 '        <button id="clearFiltersBtn" class="btn" title="Clear all filters">Clear Filters</button>\n' +
@@ -1052,21 +1062,13 @@ function generateHtml() {
 '          <div class="form-group">\n' +
 '            <label class="form-label" for="editType">Type:</label>\n' +
 '            <select id="editType" class="form-input-inline">\n' +
-'              <option value="task">task</option>\n' +
-'              <option value="bug">bug</option>\n' +
-'              <option value="feature">feature</option>\n' +
-'              <option value="epic">epic</option>\n' +
-'              <option value="chore">chore</option>\n' +
+'              ' + filterMarkup.buildEditTypeOptions(optionIndent) + '\n' +
 '            </select>\n' +
 '          </div>\n' +
 '          <div class="form-group">\n' +
 '            <label class="form-label" for="editPriority">Priority:</label>\n' +
 '            <select id="editPriority" class="form-input-inline">\n' +
-'              <option value="0">P0</option>\n' +
-'              <option value="1">P1</option>\n' +
-'              <option value="2">P2</option>\n' +
-'              <option value="3">P3</option>\n' +
-'              <option value="4">P4</option>\n' +
+'              ' + filterMarkup.buildEditPriorityOptions(optionIndent) + '\n' +
 '            </select>\n' +
 '          </div>\n' +
 '          <div class="form-group-large">\n' +

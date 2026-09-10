@@ -1,6 +1,12 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import { getWebviewHtml } from '../../webview';
+import {
+    STATUS_ALL_VALUES,
+    STATUS_ACTIVE_VALUES,
+    PRIORITY_ALL_VALUES,
+    TYPE_ALL_VALUES
+} from '../../filterUniverse';
 
 suite('Webview Security Tests', () => {
     let mockWebview: vscode.Webview;
@@ -119,5 +125,90 @@ suite('Webview Security Tests', () => {
             input![0].includes('min="0"'),
             `#editEst should carry min="0"; the schema rejects negatives, got: ${input![0]}`
         );
+    });
+
+    // A value present in a universe but missing from its dropdown cannot be
+    // selected, and under inclusive-multiselect every card carrying it is then
+    // filtered out of all four views with no way to select it back in. These
+    // assert the rendered markup covers each universe, so hardcoding the rows
+    // again would fail here rather than in a user's board.
+    suite('Filter markup tracks the universes', () => {
+        function dropdownRows(html: string, id: string): string {
+            const block = html.match(
+                new RegExp(`<div id="${id}" class="status-dropdown hidden">([\\s\\S]*?)</div>`)
+            );
+            assert.ok(block, `Should have a dropdown with id="${id}"`);
+            return block![1];
+        }
+
+        function selectOptions(html: string, id: string): string {
+            const block = html.match(
+                new RegExp(`<select id="${id}"[^>]*>([\\s\\S]*?)</select>`)
+            );
+            assert.ok(block, `Should have a select with id="${id}"`);
+            return block![1];
+        }
+
+        const cases: Array<[string, string, readonly string[]]> = [
+            ['filterPriorityDropdown', 'priority', PRIORITY_ALL_VALUES],
+            ['filterTypeDropdown', 'type', TYPE_ALL_VALUES],
+            ['filterStatusDropdown', 'status', STATUS_ALL_VALUES]
+        ];
+
+        for (const [dropdownId, label, universe] of cases) {
+            test(`the ${label} dropdown has a checkbox for every universe value`, () => {
+                const rows = dropdownRows(getWebviewHtml(mockWebview, mockUri), dropdownId);
+                for (const value of universe) {
+                    assert.ok(
+                        rows.includes(`<input type="checkbox" value="${value}"`),
+                        `#${dropdownId} is missing a row for "${value}"`
+                    );
+                }
+                // Preset rows carry value="" and a data-preset attribute, so the
+                // value rows are exactly the universe and nothing else.
+                const valueRows = rows.match(/<input type="checkbox" value="[^"]+"/g) || [];
+                assert.strictEqual(
+                    valueRows.length,
+                    universe.length,
+                    `#${dropdownId} should have exactly ${universe.length} value rows`
+                );
+            });
+        }
+
+        test('the status dropdown checks exactly the active values by default', () => {
+            const rows = dropdownRows(getWebviewHtml(mockWebview, mockUri), 'filterStatusDropdown');
+            for (const value of STATUS_ALL_VALUES) {
+                const row = rows.match(
+                    new RegExp(`<input type="checkbox" value="${value}"[^>]*>`)
+                );
+                assert.ok(row, `Should have a status row for "${value}"`);
+                const active = (STATUS_ACTIVE_VALUES as readonly string[]).includes(value);
+                assert.strictEqual(
+                    row![0].includes(' checked'),
+                    active,
+                    `"${value}" should ${active ? '' : 'not '}start checked`
+                );
+            }
+        });
+
+        test('the edit dialog Priority select offers every priority', () => {
+            const options = selectOptions(getWebviewHtml(mockWebview, mockUri), 'editPriority');
+            for (const value of PRIORITY_ALL_VALUES) {
+                assert.ok(
+                    options.includes(`<option value="${value}">`),
+                    `#editPriority is missing an option for "${value}"`
+                );
+            }
+        });
+
+        test('the edit dialog Type select offers every type', () => {
+            const options = selectOptions(getWebviewHtml(mockWebview, mockUri), 'editType');
+            for (const value of TYPE_ALL_VALUES) {
+                assert.ok(
+                    options.includes(`<option value="${value}">`),
+                    `#editType is missing an option for "${value}"`
+                );
+            }
+        });
     });
 });
