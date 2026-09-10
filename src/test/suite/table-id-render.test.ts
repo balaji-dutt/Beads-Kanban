@@ -2,11 +2,12 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Regression guard: the table view's ID column previously rendered
-// `c.id.slice(-8)`, which silently dropped the repo prefix from longer IDs
-// (e.g. `mock-000001` became `k-000001`). The same `.slice(-8)` truncation
-// was also applied to the copy-confirmation toast, so it misreported the
-// clipboard contents. This suite asserts those two patterns stay removed.
+// Issue IDs must never be left-truncated for display: the tail is the least
+// distinguishing part, so `mock-000001`.slice(-8) reads as `k-000001` and
+// matches nothing the reader can search for. board.js is read as source text
+// because these three render sites are string templates with no seam a unit
+// test can call: the table view's ID column, its copy-confirmation toast, and
+// the edit dialog's dependency lists.
 
 const BOARD_JS_PATH = path.resolve(__dirname, '..', '..', '..', 'src', 'webview', 'board.js');
 
@@ -46,6 +47,22 @@ suite('Table ID rendering regression', () => {
         assert.ok(
             /toast\(`Copied:\s*\$\{fullId\}`\)/.test(handler),
             'copy toast must report the full clipboard contents'
+        );
+    });
+
+    test('dependency list render uses the full ID, not the last 20 characters', () => {
+        const fnMatch = source.match(
+            /function formatStaticFormDep\(dep\)\s*\{[\s\S]*?\n\}/
+        );
+        assert.ok(fnMatch, 'expected to find formatStaticFormDep');
+        const fn = fnMatch![0];
+        assert.ok(
+            !/\.slice\(-20\)/.test(fn),
+            'dependency render must not truncate via id.slice(-20)'
+        );
+        assert.ok(
+            /<span class="dep-id">\$\{escapeHtml\(id\)\}<\/span>/.test(fn),
+            'dependency render must emit the escaped full ID inside a .dep-id span'
         );
     });
 });

@@ -3242,9 +3242,9 @@ function populateStaticEditForm(form, card, isCreateMode) {
 
 // Helper: format dependency for display
 function formatStaticFormDep(dep) {
-    const idSuffix = dep.id ? dep.id.slice(-20) : '';
+    const id = dep.id || '';
     const title = dep.title || '';
-    return `${escapeHtml(idSuffix)}: ${escapeHtml(title)}`;
+    return `<span class="dep-id">${escapeHtml(id)}</span>: ${escapeHtml(title)}`;
 }
 
 function refreshStaticFormLabels(form, card) {

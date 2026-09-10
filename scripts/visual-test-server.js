@@ -310,19 +310,20 @@ function generateMockBoardData() {
       updated_at: yesterday,
       closed_at: null,
       close_reason: null,
-      dependency_count: 3,
+      dependency_count: 4,
       dependent_count: 0,
       assignee: 'alice',
       estimated_minutes: 60,
       labels: ['devops', 'release', 'P0'],
       external_ref: 'PROJ-200',
       pinned: true,
-      blocked_by_count: 3,
+      blocked_by_count: 4,
       is_ready: false,
       blocked_by: [
         { id: 'mock-000005', title: 'Update API documentation' },
         { id: 'mock-000006', title: 'Refactor database connection pooling' },
-        { id: 'mock-000007', title: 'Design new dashboard layout' }
+        { id: 'mock-000007', title: 'Design new dashboard layout' },
+        { id: 'mock-platform-000010.1.4.9', title: 'Migrate the shared auth client' }
       ]
     },
     {

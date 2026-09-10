@@ -1853,6 +1853,11 @@ main {
     margin-bottom: 2px;
 }
 
+.dep-id {
+    font-family: monospace;
+    color: var(--vscode-descriptionForeground, var(--muted));
+}
+
 .relationship-list .remove-dep {
     cursor: pointer;
     color: var(--error);
