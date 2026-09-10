@@ -5,6 +5,30 @@ All notable changes to the Beads Kanban extension will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-09-10
+
+A bug-fix release. Five of the fixes are visible on the board; the rest keep the release and testing tooling honest. Nothing about the message protocol, the settings, or the extension ID changes, so upgrading is a straight reinstall of the VSIX.
+
+### 🐛 Bug Fixes
+
+- **The board no longer adopts a `.beads` directory that is not a Beads repository.** The probe tested only that a directory of that name existed. bd keeps global state at `~/.beads` on some machines — `eventsData/` and `shared-server/`, no database — so opening any folder under `$HOME` without a `.beads` of its own climbed upward, adopted it, and then failed every command with a bd error instead of saying no repository was found. A directory now qualifies only if it holds `metadata.json`, `config.yaml`, `embeddeddolt` or `dolt`, and the upward walk refuses `$HOME` outright. Opening `$HOME` as a workspace root, or choosing it in the picker, still works. This is also what made a git worktree opened as a single-root window fail confusingly; it now reports the real problem and offers the folder picker.
+- **P4 issues were invisible in every view.** The toolbar's priority filter stopped at P3 while the edit dialog offered P4 and the schema accepted it. Under inclusive-multiselect a card whose priority is not in the checked set is dropped, and there was no P4 checkbox to select it back in — so a P4 issue could be created and saved but never seen again. A stored P0–P3 selection is widened on load, so the fix applies to boards that already had one.
+- **The edit dialog's relationship lists never refreshed after a dependency change.** Set Parent, Unlink, Add/remove Blocker and Add/remove Child each reported success while the Parent, Blocked By, Blocks and Children lists kept whatever was drawn when the dialog opened. All seven affected controls now redraw.
+- **Dependency lists showed only the last 20 characters of an issue ID.** Left-truncation drops the project prefix and the leading hierarchy segments — the part that identifies the issue — leaving a tail that matches nothing you can search for. IDs now render in full, in monospace, as they already did in the Table and Tree views.
+- **The edit dialog occasionally painted an orange highlight across the whole modal on macOS.** Chromium makes scroll containers focusable and paints their focus ring in the OS accent colour, so the dialog's own scrolling container could take the ring. Focus now goes to the title field on open, and the containers no longer paint a ring however they gain focus. Tabbing still rings every form field.
+
+### 🔧 Internal
+
+- **`npm run release:bump` pointed at the wrong release path on success.** It printed `npm run release:package`, which is upstream's Marketplace path; this fork ships through `scripts/release-fork-vsix.sh`, which runs its own verify and package. Following the hint packaged the extension twice and left a stray VSIX behind.
+- **The filter dropdowns and the edit-dialog selects are built from one module.** The standalone visual test server hand-transcribed markup that `src/webview.ts` generates, and the copy was kept current by hand. When it fell behind, the harness did not fail — it wrote a selection for checkboxes that did not exist and quietly showed fewer cards, which is the class of bug the harness exists to catch.
+- **The visual test server's mock backend applies mutations instead of only acknowledging them.** It answered every write with `mutation.ok` and changed nothing, so any UI that re-reads after a write — the edit dialog refetches after a relationship change — rendered a working fix and a broken one identically.
+- **Long-form fixtures added to the visual test server.** The mock dataset was uniformly terse, so bugs that depend on content volume — textarea overflow, markdown preview height, a comment thread past its scroll boundary — could not be reproduced there at all.
+- **Removed dead form-rebuild code from `openDetail`.** A large HTML template literal built but never assigned, left over from the static-form refactor.
+
+### 📚 Documentation
+
+- **Repointed every `steveyegge/beads` link at `gastownhall/beads`.** The upstream repository moved and the old links resolved only through GitHub's redirect, which stops working if the old name is ever reclaimed.
+
 ## [2.2.0] - 2026-08-16
 
 This fork becomes the maintained line. `main` now carries the fork's work rather than tracking `davidcforbes/Beads-Kanban`, which has been dormant since April 2026. Nothing about how the extension behaves changes in this release — it is an identity, documentation and versioning release. The functional work it collects shipped across 2.1.4-bd.1 through 2.1.4-bd.5; see those entries.
