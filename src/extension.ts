@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import { DaemonBeadsAdapter } from "./daemonBeadsAdapter";
 import { getWebviewHtml } from "./webview";
@@ -7,6 +8,7 @@ import { sanitizeErrorWithContext as sanitizeError } from "./sanitizeError";
 import { validateMarkdownFields, validateCommentContent } from "./markdownValidator";
 import {
   BEADS_DIR,
+  BEADS_MARKER_ENTRIES,
   REPO_PATH_STATE_KEY,
   BeadsResolution,
   resolveBeadsRoot,
@@ -155,11 +157,15 @@ export function activate(context: vscode.ExtensionContext) {
   let lastDescribedResolution: string | null = null;
 
   const hasBeadsDir = (repoRoot: string): boolean => {
+    const beadsDir = path.join(repoRoot, BEADS_DIR);
     try {
-      return fs.statSync(path.join(repoRoot, BEADS_DIR)).isDirectory();
+      if (!fs.statSync(beadsDir).isDirectory()) {
+        return false;
+      }
     } catch {
       return false;
     }
+    return BEADS_MARKER_ENTRIES.some((entry) => fs.existsSync(path.join(beadsDir, entry)));
   };
 
   const resolveRoot = (): BeadsResolution => {
@@ -167,13 +173,14 @@ export function activate(context: vscode.ExtensionContext) {
     const resolution = resolveBeadsRoot({
       roots: (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath),
       persisted,
-      hasBeadsDir
+      hasBeadsDir,
+      homeDir: os.homedir()
     });
 
     // A picked repository that has since moved or been deleted would otherwise
     // keep losing the race against discovery on every future session.
     if (persisted && resolution.kind !== 'persisted') {
-      output.appendLine(`[Extension] Selected repository no longer has a ${BEADS_DIR} directory; clearing it.`);
+      output.appendLine(`[Extension] Selected repository is no longer a Beads repository; clearing it.`);
       void context.workspaceState.update(REPO_PATH_STATE_KEY, undefined);
     }
 
@@ -228,7 +235,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     const folderPath = selectedFolder[0].fsPath;
     if (!hasBeadsDir(folderPath)) {
-      vscode.window.showErrorMessage(`Selected folder does not contain a ${BEADS_DIR} directory.`);
+      vscode.window.showErrorMessage(
+        `Selected folder does not contain a Beads repository. Run 'bd init' there, or pick the folder whose ${BEADS_DIR} directory holds the issue database.`
+      );
       return null;
     }
 
@@ -267,7 +276,7 @@ export function activate(context: vscode.ExtensionContext) {
     // Surface an ambiguous or failed lookup without blocking activation.
     if (resolution.kind === 'none') {
       void vscode.window.showWarningMessage(
-        `No ${BEADS_DIR} directory was found in this workspace. Using ${resolution.root}.`,
+        `No Beads repository was found in this workspace. Using ${resolution.root}, where bd commands will fail until one exists.`,
         'Select Repository Folder…'
       ).then((choice) => {
         if (choice) { void selectBeadsRepository(); }

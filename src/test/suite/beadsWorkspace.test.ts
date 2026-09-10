@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
     resolveBeadsRoot,
     describeResolution,
+    BEADS_MARKER_ENTRIES,
     DEFAULT_MAX_ASCEND
 } from '../../beadsWorkspace';
 
@@ -140,6 +141,113 @@ suite('resolveBeadsRoot', () => {
 
         assert.strictEqual(result.kind, 'none');
         assert.strictEqual(result.root, ROOT_A);
+    });
+
+    // bd keeps global state at ~/.beads on some machines. Climbing into it
+    // makes every command fail against a repository that does not exist, and
+    // the marker check alone does not cover it: a global bd install can leave
+    // a genuine-looking .beads there.
+    suite('the upward walk refuses $HOME', () => {
+        const HOME = path.join(path.sep, 'Users', 'someone');
+        const UNDER_HOME = path.join(HOME, 'scratch', 'notes');
+
+        test('does not adopt $HOME even when it probes positive', () => {
+            const result = resolveBeadsRoot({
+                roots: [UNDER_HOME],
+                hasBeadsDir: probe([HOME]),
+                homeDir: HOME
+            });
+
+            assert.strictEqual(result.kind, 'none');
+            assert.strictEqual(result.root, UNDER_HOME);
+        });
+
+        test('a trailing separator on homeDir still matches', () => {
+            const result = resolveBeadsRoot({
+                roots: [UNDER_HOME],
+                hasBeadsDir: probe([HOME]),
+                homeDir: HOME + path.sep
+            });
+
+            assert.strictEqual(result.kind, 'none');
+        });
+
+        test('the walk continues past $HOME rather than stopping at it', () => {
+            const above = path.join(path.sep, 'Users');
+            const result = resolveBeadsRoot({
+                roots: [UNDER_HOME],
+                hasBeadsDir: probe([above]),
+                homeDir: HOME
+            });
+
+            assert.strictEqual(result.kind, 'ancestor');
+            assert.strictEqual(result.root, above);
+        });
+
+        test('$HOME opened as a workspace root still resolves directly', () => {
+            // Refusing it here would break anyone who genuinely keeps a
+            // repository at $HOME; only the climb is untrustworthy.
+            const result = resolveBeadsRoot({
+                roots: [HOME],
+                hasBeadsDir: probe([HOME]),
+                homeDir: HOME
+            });
+
+            assert.strictEqual(result.kind, 'direct');
+            assert.strictEqual(result.root, HOME);
+        });
+
+        test('$HOME chosen through the picker still resolves', () => {
+            const result = resolveBeadsRoot({
+                roots: [ROOT_A],
+                persisted: HOME,
+                hasBeadsDir: probe([HOME]),
+                homeDir: HOME
+            });
+
+            assert.strictEqual(result.kind, 'persisted');
+            assert.strictEqual(result.root, HOME);
+        });
+
+        test('an absent homeDir leaves the walk unrestricted', () => {
+            const result = resolveBeadsRoot({
+                roots: [UNDER_HOME],
+                hasBeadsDir: probe([HOME])
+            });
+
+            assert.strictEqual(result.kind, 'ancestor');
+            assert.strictEqual(result.root, HOME);
+        });
+    });
+});
+
+suite('BEADS_MARKER_ENTRIES', () => {
+    // The probe must answer "bd can read this", not "something bd-related
+    // touched this". Both excluded names identify a directory bd 1.x cannot
+    // open, which is the failure the marker check exists to prevent.
+    test('excludes the legacy SQLite database', () => {
+        assert.ok(
+            !BEADS_MARKER_ENTRIES.includes('beads.db'),
+            'bd 1.x reports Dolt as the only supported backend; a SQLite .beads is unreadable'
+        );
+    });
+
+    test('excludes the JSONL export', () => {
+        assert.ok(
+            !BEADS_MARKER_ENTRIES.includes('issues.jsonl'),
+            'issues.jsonl is an optional export for interchange, so alone it marks a copied artifact'
+        );
+    });
+
+    test('covers Windows client mode, which has no local dolt directory', () => {
+        const withoutDolt = BEADS_MARKER_ENTRIES.filter(
+            (entry) => entry !== 'dolt' && entry !== 'embeddeddolt'
+        );
+        assert.ok(
+            withoutDolt.length > 0,
+            'a client-mode checkout must still be recognised without dolt/ present'
+        );
+        assert.ok(withoutDolt.includes('metadata.json'));
     });
 });
 

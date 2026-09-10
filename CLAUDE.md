@@ -132,7 +132,7 @@ Extension Host (TypeScript/Node.js)
 
 - `src/extension.ts` - Entry point; registers commands, creates webview panel, routes messages, enforces read-only mode, and wires file watching
 - `src/daemonBeadsAdapter.ts` - Daemon adapter; uses `bd` CLI to read and mutate issues with efficient caching
-- `src/beadsWorkspace.ts` - Resolves which workspace folder holds `.beads` (picker choice → root containing `.beads` → upward walk → `roots[0]`). No `vscode` import, so it is unit-testable without an Extension Development Host
+- `src/beadsWorkspace.ts` - Resolves which workspace folder holds `.beads` (picker choice → root containing `.beads` → upward walk → `roots[0]`). A directory counts only if it holds one of `BEADS_MARKER_ENTRIES` (`metadata.json`, `config.yaml`, `embeddeddolt`, `dolt`) — bare directory existence adopts bd's global `~/.beads`, which is not a repository. The upward walk additionally refuses `$HOME`; opening `$HOME` as a root or picking it still works. No `vscode` import, so it is unit-testable without an Extension Development Host
 - `src/beadsWatch.ts` - File-watch globs and deny predicate for auto-refresh. Also `vscode`-free
 - `src/sanitizeError.ts` - Maps and scrubs CLI errors before they reach the webview
 - `src/types.ts` - Type definitions and Zod schemas
@@ -713,6 +713,6 @@ command bd -C "$BD_REPO" ready
 Two consequences worth knowing:
 
 - **There is one database, not per-branch state.** Closing an issue on a feature branch closes it immediately and globally, whether or not that branch ever merges. Close when the work is done; reopen if the branch is abandoned.
-- **Opening a worktree in VS Code hits `bbk-p86`.** A worktree opened as a single-root window has no `.beads`, so the board climbs upward and adopts `~/.beads` — which is not a bd repository — then fails with a bd error rather than saying no repository was found. Add the main checkout as a second workspace folder, or use the repository picker, until that bug is fixed.
+- **A worktree opened as a single-root window has no Beads repository to find.** It has no `.beads` of its own, and the upward walk will not adopt one: `~/.beads` fails the marker check, and the walk refuses `$HOME` regardless. The board says no Beads repository was found and offers the folder picker. Add the main checkout as a second workspace folder, or pick it.
 
 Merging a worktree branch into `main` is unaffected. No bead data is tracked by git; it travels on `refs/dolt/data` via `scripts/bd-sync.sh`, and refs are shared across worktrees. There is nothing for a merge to conflict on. The script derives the main checkout the same way as the snippet above, so it is safe to run from a worktree.

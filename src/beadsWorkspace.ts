@@ -16,6 +16,32 @@ import * as path from 'path';
 export const BEADS_DIR = '.beads';
 
 /**
+ * Entries inside `.beads` that mark a repository bd can actually read.
+ *
+ * The test is deliberately "bd could open this", not "something bd-related
+ * touched this". A directory merely named `.beads` is not enough: bd's own
+ * global state lives at `~/.beads` on some machines and holds `eventsData/`
+ * and `shared-server/`, so a probe that only checks for the directory adopts
+ * it and every command then fails against a repository that does not exist.
+ *
+ * Two tempting additions are deliberately absent. `beads.db` is a legacy
+ * SQLite database, and bd 1.x reports Dolt as "the default (and only
+ * supported) storage backend", so matching it adopts a directory bd cannot
+ * open. `issues.jsonl` is an optional export for interchange rather than a
+ * store, so on its own it marks a copied artifact, not a repository.
+ *
+ * `metadata.json` and `config.yaml` carry the check on native Windows, where
+ * bd is a client of a Dolt server hosted elsewhere and there is no local
+ * `dolt/` directory at all.
+ */
+export const BEADS_MARKER_ENTRIES: readonly string[] = [
+    'metadata.json',
+    'config.yaml',
+    'embeddeddolt',
+    'dolt'
+];
+
+/**
  * workspaceState key holding the folder chosen through the repository picker.
  * Namespaced to match the `beadsKanban.uiState` key already in use; the old
  * un-namespaced `beadsRepoPath` was written but never read.
@@ -36,9 +62,26 @@ export interface ResolveInput {
     roots: string[];
     /** Previously picked folder, which may since have moved or been deleted. */
     persisted?: string;
-    /** True when `<repoRoot>/.beads` exists and is a directory. */
+    /** True when `<repoRoot>/.beads` is a repository bd can read. */
     hasBeadsDir: (repoRoot: string) => boolean;
     maxAscend?: number;
+    /**
+     * The user's home directory. The upward walk never adopts it, however the
+     * probe answers: a `.beads` directly under `$HOME` reached by climbing is
+     * far more likely to be bd's global state than the repository the open
+     * folder belongs to. Opening `$HOME` as a workspace root is an explicit
+     * act and still resolves through the direct pass.
+     */
+    homeDir?: string;
+}
+
+/** Trailing-separator and `..` tolerant path equality. */
+function samePath(a: string, b: string): boolean {
+    const left = path.resolve(a);
+    const right = path.resolve(b);
+    return process.platform === 'win32'
+        ? left.toLowerCase() === right.toLowerCase()
+        : left === right;
 }
 
 /**
@@ -67,11 +110,13 @@ export function resolveBeadsRoot(input: ResolveInput): BeadsResolution {
         return { kind: 'direct', root: direct[0], candidates: direct };
     }
 
+    const { homeDir } = input;
     for (const root of roots) {
         // Pass 1 already tested the root itself, so start at its parent.
         let dir = path.dirname(root);
         for (let level = 0; level < maxAscend; level++) {
-            if (hasBeadsDir(dir)) {
+            const isHome = homeDir !== undefined && homeDir !== '' && samePath(dir, homeDir);
+            if (!isHome && hasBeadsDir(dir)) {
                 return { kind: 'ancestor', root: dir, candidates: [dir] };
             }
             const parent = path.dirname(dir);
@@ -98,7 +143,7 @@ export function describeResolution(resolution: BeadsResolution): string {
             return `No workspace root contains ${BEADS_DIR}; using ancestor: ${resolution.root}`;
         case 'none':
             return resolution.root === null
-                ? `No workspace folder is open; cannot locate ${BEADS_DIR}.`
-                : `No ${BEADS_DIR} directory found; falling back to ${resolution.root}`;
+                ? `No workspace folder is open; cannot locate a Beads repository.`
+                : `No Beads repository found; falling back to ${resolution.root}`;
     }
 }
