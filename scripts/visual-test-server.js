@@ -122,7 +122,49 @@ function generateMockBoardData() {
     {
       id: 'mock-000001',
       title: 'Implement user authentication flow',
-      description: 'Add OAuth2 login with Google and GitHub providers',
+      // Long-form fixture: a description sized to overflow the textarea and
+      // to give the markdown preview enough to render.
+      description: [
+        'Replace the hand-rolled session login with OAuth2 against Google and GitHub. The current flow stores',
+        'a bcrypt hash per user and issues an opaque session cookie, which works but puts us on the hook for',
+        'password reset, breach monitoring and the support load that comes with both.',
+        '',
+        '### What users see',
+        '',
+        'Two provider buttons on the login page and nothing else. Existing password accounts keep working',
+        'through a grace period: on first OAuth login with an email that matches an existing account, we link',
+        'the two rather than creating a duplicate, and the password stops being accepted once the link is made.',
+        '',
+        'The linking step is the part most likely to go wrong. Matching on email alone means anyone who can',
+        'get a provider to assert an address can claim the matching account, so we only auto-link when the',
+        'provider marks the address verified, and fall back to an emailed confirmation when it does not.',
+        '',
+        '### What changes underneath',
+        '',
+        '- A `provider_identities` table keyed on (provider, subject), with a nullable link to `users`',
+        '- The session cookie stays opaque; we are not moving to JWTs as part of this',
+        '- `users.password_hash` becomes nullable and is cleared when an account finishes linking',
+        '- The admin tool grows a "sign-in methods" panel so support can see how an account authenticates',
+        '',
+        '### Out of scope',
+        '',
+        'SAML, SCIM provisioning and org-level enforcement of a single provider. All three are on the',
+        'enterprise roadmap and all three assume this lands first.'
+      ].join('\n'),
+      notes: [
+        'Provider quirks worth remembering while implementing:',
+        '',
+        'GitHub does not return an email in the token response when the user has set their address to private.',
+        'A second call to /user/emails is needed, and it can come back with no verified address at all, which',
+        'is the case that has to route to the emailed-confirmation path rather than erroring.',
+        '',
+        'Google rotates its signing keys without notice, so the JWKS fetch cannot be cached indefinitely.',
+        'Cache on the key id and refetch on an unknown one, with a rate limit so an attacker cannot use',
+        'unknown key ids to drive unbounded outbound requests.',
+        '',
+        'Both providers return the subject as a string. It is numeric for GitHub today, but storing it as an',
+        'integer would break the moment they widen it, and GitHub has said they will.'
+      ].join('\n'),
       status: 'open',
       priority: 1,
       issue_type: 'feature',
@@ -258,7 +300,54 @@ function generateMockBoardData() {
       external_ref: 'PROJ-150',
       pinned: false,
       blocked_by_count: 0,
-      is_ready: false
+      is_ready: false,
+      // Long-form fixture: acceptance criteria and design notes sized to
+      // overflow the inner form and the markdown preview.
+      acceptance_criteria: [
+        '- [ ] Pool size is configurable per environment, defaulting to 10 for the API and 4 for the worker fleet',
+        '- [ ] Checkout blocks with a timeout rather than allocating a new connection when the pool is saturated',
+        '- [ ] The timeout is configurable and defaults to 5s; a timed-out checkout raises a distinct error type so the retry layer can tell it apart from a query failure',
+        '- [ ] Connections are validated before handout and discarded if the server closed them, so a failover does not surface as a burst of "server has gone away" errors',
+        '- [ ] Idle connections are reaped after 10 minutes to stay under the managed instance connection cap',
+        '- [ ] Pool checkout wait time, in-use count and idle count are exported as metrics',
+        '- [ ] Load test at 3x current peak shows no connection errors and p99 checkout wait under 20ms',
+        '- [ ] Rollback is a config flag, not a deploy: setting pool size to 1 reproduces the old single-connection behaviour'
+      ].join('\n'),
+      design: [
+        '## Why',
+        '',
+        'Every request currently opens its own connection and closes it on the way out. That was fine when',
+        'the service handled a few requests a second, but connection setup is now a measurable share of p99',
+        'latency, and the managed instance has a hard cap of 200 connections that we hit during the Tuesday',
+        'batch window. When we hit it, the failure is not graceful: new connections are refused and the',
+        'health check fails, so the instance is pulled from the load balancer while it is otherwise healthy.',
+        '',
+        '## Approach',
+        '',
+        'Introduce a pool in front of the driver rather than changing call sites. The repository layer already',
+        'goes through a single `getConnection()` helper, so the pool can be dropped in there and the ~200 call',
+        'sites stay untouched. This keeps the diff reviewable and means a rollback is a config change.',
+        '',
+        'Sizing: pool size times instance count must stay under the 200 cap with headroom for migrations and',
+        'ad-hoc sessions. At 12 API instances a pool of 10 puts us at 120, leaving room for the 4 workers at 4',
+        'each and ~60 spare.',
+        '',
+        '## Failure modes',
+        '',
+        'The one that matters is pool exhaustion. A leaked connection - checked out and never returned, usually',
+        'an early return that skips the release - drains the pool permanently, and the symptom is every request',
+        'hanging rather than one endpoint failing. Guard it two ways: checkout has a timeout so a leak degrades',
+        'into errors instead of a hang, and the in-use metric alerts when it sits at pool size for more than a',
+        'minute.',
+        '',
+        'Failover is the second: after a failover the pool holds connections to a server that is gone. Validate',
+        'on handout rather than on return, so the cost is paid only when a connection is actually used.',
+        '',
+        '## Not doing',
+        '',
+        'Read replicas and statement-level routing. Both are worth doing and both need the pool in place first,',
+        'so they are follow-ups rather than part of this change.'
+      ].join('\n')
     },
     {
       id: 'mock-000007',
@@ -354,6 +443,19 @@ function generateMockBoardData() {
         { id: 'mock-000006', title: 'Refactor database connection pooling' },
         { id: 'mock-000007', title: 'Design new dashboard layout' },
         { id: 'mock-platform-000010.1.4.9', title: 'Migrate the shared auth client' }
+      ],
+      // Long-form fixture: a release-coordination thread long enough to push
+      // the comments list past the inner form's scroll boundary.
+      comments: [
+        { id: 1, author: 'alice', text: 'Holding this until the pooling change (PROJ-150) is out of code review. Shipping both in the same window means we cannot tell which one moved p99 if it moves the wrong way.', created_at: twoWeeksAgo },
+        { id: 2, author: 'bob', text: 'Agreed on sequencing. One thing to flag: the migration in this release adds a NOT NULL column to `sessions`, which locks the table on the old engine. On our row count that is roughly 40 seconds. Doing it during the Tuesday batch window would be bad.', created_at: twoWeeksAgo },
+        { id: 3, author: 'alice', text: 'Good catch. Can we split it - add the column nullable, backfill in batches, then add the constraint once the backfill is done? That is three deploys instead of one but none of them lock.', created_at: lastWeek },
+        { id: 4, author: 'bob', text: 'Yes, and the backfill can run from the worker fleet so it does not compete with request traffic. I will write it up as a separate issue and link it as a blocker rather than growing this one.', created_at: lastWeek },
+        { id: 5, author: 'charlie', text: 'From the client side: the auth client migration has to land before this, not after. The new session shape is what the refreshed client reads. If this ships first, every mobile client on the current release starts getting 401s on refresh.', created_at: lastWeek },
+        { id: 6, author: 'alice', text: 'That reorders things. Sequence is now: auth client migration, then the column split, then the pooling change, then this. Updating the blockers to match.', created_at: yesterday },
+        { id: 7, author: 'diana', text: 'Please add a rollback note to the release doc before this goes out. Last release we found out during the incident that the config flag only half-reverted - the feature flag came back but the cache keys had already been rewritten to the new format, so the old code path could not read them.', created_at: yesterday },
+        { id: 8, author: 'alice', text: 'Added. Rollback is: flip the flag, then run the cache-key rewrite in reverse. The reverse script is in the release branch and I have tested it against a staging snapshot.', created_at: now },
+        { id: 9, author: 'bob', text: 'Backfill finished in staging - 14 minutes, no lock contention, no error budget spent. Running it against production tonight.', created_at: now }
       ]
     },
     {
@@ -1348,9 +1450,13 @@ function generateHtml() {
 '            if (card) {\n' +
 '              setTimeout(function() {\n' +
 '                var fullCard = Object.assign({}, card, {\n' +
-'                  acceptance_criteria: "- [ ] Acceptance criteria item 1\\n- [ ] Acceptance criteria item 2",\n' +
-'                  design: "## Design Notes\\n\\nSample design notes for **" + card.title + "**",\n' +
-'                  notes: "Implementation notes go here.",\n' +
+'                  // A fixture that carries its own long-form text keeps it;\n' +
+'                  // the rest get the short sample. Volume-dependent bugs -\n' +
+'                  // inner-form scroll, markdown preview height, long comment\n' +
+'                  // threads - only reproduce against the long fixtures.\n' +
+'                  acceptance_criteria: card.acceptance_criteria || "- [ ] Acceptance criteria item 1\\n- [ ] Acceptance criteria item 2",\n' +
+'                  design: card.design || ("## Design Notes\\n\\nSample design notes for **" + card.title + "**"),\n' +
+'                  notes: card.notes || "Implementation notes go here.",\n' +
 '                  due_at: null,\n' +
 '                  defer_until: null,\n' +
 '                  is_template: false,\n' +
