@@ -1220,6 +1220,116 @@ function generateHtml() {
 '    var _mockMessageLog = [];\n' +
 '    var _mockState = {};\n' +
 '\n' +
+'    // Mutations are applied to _mockBoardCards before mutation.ok is sent.\n' +
+'    // Anything less makes a write a no-op the moment the UI re-reads it:\n' +
+'    // the edit dialog refetches through issue.getFull after a relationship\n' +
+'    // change, and a save or a drag refetches the whole board. Under a mock\n' +
+'    // that only answers "ok", working and broken code render identically.\n' +
+'    function _mockSendBoard(requestId) {\n' +
+'      var response = {\n' +
+'        data: {\n' +
+'          type: "board.minimal",\n' +
+'          requestId: requestId || "mock-req-board",\n' +
+'          payload: { cards: _mockBoardCards }\n' +
+'        }\n' +
+'      };\n' +
+'      console.log("[mock-vscode] Responding with board.minimal (" + _mockBoardCards.length + " cards)");\n' +
+'      _mockMessageLog.push({ direction: "in", msg: response.data, timestamp: Date.now() });\n' +
+'      window.dispatchEvent(new MessageEvent("message", response));\n' +
+'    }\n' +
+'    function _mockFind(id) {\n' +
+'      return _mockBoardCards.find(function(c) { return c.id === id; });\n' +
+'    }\n' +
+'    function _mockRef(card) { return { id: card.id, title: card.title }; }\n' +
+'    function _mockWithRef(list, card) {\n' +
+'      list = list || [];\n' +
+'      if (!list.some(function(r) { return r.id === card.id; })) { list.push(_mockRef(card)); }\n' +
+'      return list;\n' +
+'    }\n' +
+'    function _mockWithoutRef(list, id) {\n' +
+'      return (list || []).filter(function(r) { return r.id !== id; });\n' +
+'    }\n' +
+'    function _mockRecount(card) {\n' +
+'      card.blocked_by_count = (card.blocked_by || []).length;\n' +
+'      card.dependency_count = card.blocked_by_count;\n' +
+'      card.dependent_count = (card.blocks || []).length;\n' +
+'    }\n' +
+'    // `bd dep add <issue> <depends-on>`: id depends on otherId, so\n' +
+'    // parent-child makes otherId the parent of id, and blocks makes otherId\n' +
+'    // a blocker of id. Both directions are stored, matching what bd show\n' +
+'    // returns for each side.\n' +
+'    function _mockAddDependency(payload) {\n' +
+'      var issue = _mockFind(payload.id);\n' +
+'      var other = _mockFind(payload.otherId);\n' +
+'      if (!issue || !other) { return; }\n' +
+'      if (payload.type === "parent-child") {\n' +
+'        issue.parent = _mockRef(other);\n' +
+'        other.children = _mockWithRef(other.children, issue);\n' +
+'      } else {\n' +
+'        issue.blocked_by = _mockWithRef(issue.blocked_by, other);\n' +
+'        other.blocks = _mockWithRef(other.blocks, issue);\n' +
+'      }\n' +
+'      _mockRecount(issue);\n' +
+'      _mockRecount(other);\n' +
+'    }\n' +
+'    // `bd dep remove` takes no type and drops whatever edge exists between\n' +
+'    // the pair, so this severs both shapes rather than trusting the type the\n' +
+'    // webview happened to send.\n' +
+'    function _mockRemoveDependency(payload) {\n' +
+'      var issue = _mockFind(payload.id);\n' +
+'      var other = _mockFind(payload.otherId);\n' +
+'      if (!issue || !other) { return; }\n' +
+'      if (issue.parent && issue.parent.id === other.id) { issue.parent = null; }\n' +
+'      other.children = _mockWithoutRef(other.children, issue.id);\n' +
+'      issue.blocked_by = _mockWithoutRef(issue.blocked_by, other.id);\n' +
+'      other.blocks = _mockWithoutRef(other.blocks, issue.id);\n' +
+'      _mockRecount(issue);\n' +
+'      _mockRecount(other);\n' +
+'    }\n' +
+'    var _mockColumnStatus = {\n' +
+'      ready: "open", open: "open", in_progress: "in_progress",\n' +
+'      blocked: "blocked", closed: "closed"\n' +
+'    };\n' +
+'    function _mockApplyMutation(msg) {\n' +
+'      var payload = msg.payload || {};\n' +
+'      var card = _mockFind(payload.id);\n' +
+'      if (msg.type === "issue.addDependency") { _mockAddDependency(payload); return; }\n' +
+'      if (msg.type === "issue.removeDependency") { _mockRemoveDependency(payload); return; }\n' +
+'      if (msg.type === "issue.create") {\n' +
+'        _mockBoardCards.push(Object.assign({\n' +
+'          id: payload.__newId, title: "New Issue", description: "", status: "open",\n' +
+'          priority: 2, issue_type: "task", created_at: new Date().toISOString(),\n' +
+'          created_by: "me", updated_at: new Date().toISOString(), closed_at: null,\n' +
+'          close_reason: null, dependency_count: 0, dependent_count: 0, assignee: null,\n' +
+'          estimated_minutes: null, labels: [], external_ref: null, pinned: false,\n' +
+'          blocked_by_count: 0, is_ready: true, comments: []\n' +
+'        }, payload.card));\n' +
+'        return;\n' +
+'      }\n' +
+'      if (!card) { return; }\n' +
+'      if (msg.type === "issue.update" && payload.updates) {\n' +
+'        Object.keys(payload.updates).forEach(function(k) {\n' +
+'          if (payload.updates[k] !== undefined) { card[k] = payload.updates[k]; }\n' +
+'        });\n' +
+'        card.updated_at = new Date().toISOString();\n' +
+'      } else if (msg.type === "issue.move") {\n' +
+'        card.status = _mockColumnStatus[payload.toColumn] || card.status;\n' +
+'        card.is_ready = card.status === "open" && (card.blocked_by_count || 0) === 0;\n' +
+'        card.updated_at = new Date().toISOString();\n' +
+'      } else if (msg.type === "issue.addLabel") {\n' +
+'        card.labels = card.labels || [];\n' +
+'        if (card.labels.indexOf(payload.label) === -1) { card.labels.push(payload.label); }\n' +
+'      } else if (msg.type === "issue.removeLabel") {\n' +
+'        card.labels = (card.labels || []).filter(function(l) { return l !== payload.label; });\n' +
+'      } else if (msg.type === "issue.addComment") {\n' +
+'        card.comments = card.comments || [];\n' +
+'        card.comments.push({\n' +
+'          id: Date.now(), author: payload.author || "Me", text: payload.text,\n' +
+'          created_at: new Date().toISOString()\n' +
+'        });\n' +
+'      }\n' +
+'    }\n' +
+'\n' +
 '    window.acquireVsCodeApi = function() {\n' +
 '      return {\n' +
 '        postMessage: function(msg) {\n' +
@@ -1228,18 +1338,7 @@ function generateHtml() {
 '\n' +
 '          // Handle board.loadMinimal - respond with mock board.minimal\n' +
 '          if (msg.type === "board.loadMinimal" || msg.type === "board.load" || msg.type === "board.refresh") {\n' +
-'            setTimeout(function() {\n' +
-'              var response = {\n' +
-'                data: {\n' +
-'                  type: "board.minimal",\n' +
-'                  requestId: msg.requestId || "mock-req-1",\n' +
-'                  payload: { cards: _mockBoardCards }\n' +
-'                }\n' +
-'              };\n' +
-'              console.log("[mock-vscode] Responding with board.minimal (" + _mockBoardCards.length + " cards)");\n' +
-'              _mockMessageLog.push({ direction: "in", msg: response.data, timestamp: Date.now() });\n' +
-'              window.dispatchEvent(new MessageEvent("message", response));\n' +
-'            }, 100);\n' +
+'            setTimeout(function() { _mockSendBoard(msg.requestId || "mock-req-1"); }, 100);\n' +
 '            return;\n' +
 '          }\n' +
 '\n' +
@@ -1264,7 +1363,10 @@ function generateHtml() {
 '                  children: card.children || [],\n' +
 '                  blocks: card.blocks || [],\n' +
 '                  blocked_by: card.blocked_by || [],\n' +
-'                  comments: [\n' +
+'                  // Cards seeded without a comments array get the sample\n' +
+'                  // thread; once addComment writes one, that array wins so\n' +
+'                  // the posted comment survives a reopen.\n' +
+'                  comments: card.comments || [\n' +
 '                    { id: 1, author: "alice", text: "This looks good. Ready for review.", created_at: new Date().toISOString() },\n' +
 '                    { id: 2, author: "bob", text: "Agreed, merging.", created_at: new Date().toISOString() }\n' +
 '                  ]\n' +
@@ -1294,24 +1396,38 @@ function generateHtml() {
 '            return;\n' +
 '          }\n' +
 '\n' +
-'          // Handle mutations - respond with mock success\n' +
+'          // Handle mutations - apply to _mockBoardCards, then respond ok\n' +
 '          if (msg.type === "issue.create" || msg.type === "issue.update" ||\n' +
 '              msg.type === "issue.move" || msg.type === "issue.addComment" ||\n' +
 '              msg.type === "issue.addLabel" || msg.type === "issue.removeLabel" ||\n' +
 '              msg.type === "issue.addDependency" || msg.type === "issue.removeDependency") {\n' +
+'            var created = msg.type === "issue.create"\n' +
+'              ? { id: "mock-new-" + Date.now(), title: (msg.payload && msg.payload.title) || "New Issue" }\n' +
+'              : null;\n' +
+'            try {\n' +
+'              _mockApplyMutation(created\n' +
+'                ? { type: msg.type, payload: Object.assign({ __newId: created.id, card: msg.payload }, msg.payload) }\n' +
+'                : msg);\n' +
+'            } catch (err) {\n' +
+'              console.warn("[mock-vscode] Failed to apply " + msg.type + ":", err);\n' +
+'            }\n' +
 '            setTimeout(function() {\n' +
 '              var response = {\n' +
 '                data: {\n' +
 '                  type: "mutation.ok",\n' +
 '                  requestId: msg.requestId || "mock-req-mut",\n' +
-'                  payload: msg.type === "issue.create"\n' +
-'                    ? { id: "mock-new-" + Date.now(), title: (msg.payload && msg.payload.title) || "New Issue" }\n' +
-'                    : {}\n' +
+'                  payload: created || {}\n' +
 '                }\n' +
 '              };\n' +
-'              console.log("[mock-vscode] Responding with mutation.ok for " + msg.type);\n' +
+'              console.log("[mock-vscode] Applied and responding with mutation.ok for " + msg.type);\n' +
 '              _mockMessageLog.push({ direction: "in", msg: response.data, timestamp: Date.now() });\n' +
 '              window.dispatchEvent(new MessageEvent("message", response));\n' +
+'              // Every mutation handler in src/extension.ts follows mutation.ok\n' +
+'              // with sendBoard(). That is what downgrades cardStateLevel back\n' +
+'              // to "minimal"; without it loadFullIssue() keeps serving the\n' +
+'              // pre-mutation full card and the dialog shows a severed edge as\n' +
+'              // still present.\n' +
+'              _mockSendBoard(msg.requestId);\n' +
 '            }, 50);\n' +
 '            return;\n' +
 '          }\n' +
