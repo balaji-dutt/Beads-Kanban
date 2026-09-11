@@ -134,8 +134,11 @@ bash scripts/release-fork-vsix.sh --dry-run
 ```
 
 Verifies, packages, and checksums without publishing. Confirm the emitted `TAG`
-and `ASSET` look right and the package is roughly 39 files / 1.34 MB. A file
-count in the hundreds means the bundler regressed.
+and `ASSET` look right, and that the package lands in 35–40 files and
+1.25–1.35 MB. A count in the hundreds means the bundler regressed. A drift of a
+file or two past the edges usually means something was legitimately added and
+these bounds need widening, which is worth a moment's thought rather than a
+shrug.
 
 The printed sha256 is indicative only — VSIX zips are not guaranteed
 byte-reproducible across runs. Take the authoritative value from the real run.
