@@ -1026,7 +1026,7 @@ function generateHtml() {
 '    }\n' +
 '  </style>\n' +
 '</head>\n' +
-'<body>\n' +
+`<body class="vscode-${THEME === 'light' ? 'light' : 'dark'}">\n` +
 '  <header class="topbar">\n' +
 '    <div class="title">\n' +
 '      <span class="title-text">Better Beads Kanban</span>\n' +
