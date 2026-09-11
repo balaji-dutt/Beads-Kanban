@@ -208,3 +208,16 @@ Pin values for downstream installers:
 The same checksum is published as the release's SHA256SUMS asset, so an
 automated pin can pick it up without downloading the VSIX.
 EOF
+
+# --- Cleanup -----------------------------------------------------------------
+
+# After a real run both files are on the release, where `gh release download`
+# reproduces them verifiably; after a dry run nothing needs them, because what a
+# dry run is read for — file count and size — is vsce's own output above. Either
+# way a copy left in the repo root is dead weight that accumulates per release.
+#
+# EXPECTED_SHA was read into a variable before the pin block, so deleting
+# SHA256SUMS here cannot affect what was printed. A failed upload exits earlier
+# under `set -e` and never reaches this, which is the one case where the local
+# copy is the only copy.
+rm -f "${TARGET_VSIX}" SHA256SUMS
