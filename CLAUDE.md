@@ -692,7 +692,10 @@ git ls-remote <dolt-url> refs/dolt/data   # confirm it changed
 
 ### Working in a git worktree
 
-**`bd` does not work from a worktree, and must not be made to.** A worktree only receives tracked files. `.beads/` is gitignored, so a worktree has neither the database nor the `config.yaml` carrying the `routing.mode: maintainer` pin. Every `bd` command there fails with:
+**Whether `bd` resolves from a worktree depends on where that worktree sits.** A worktree only receives tracked files and `.beads/` is gitignored, so it never carries a database of its own. What differs is whether the upward walk finds the main checkout's:
+
+- **Nested inside the main checkout** — `.claude/worktrees/<name>` or `worktrees/<name>` — the walk reaches it and bd works normally. Measured from `.claude/worktrees/`: `bd where` reports the main checkout's `.beads`, and `bd config get routing.mode` reports `maintainer`, so the routing pin is in force and `bd create` files to the right database.
+- **Anywhere else**, nothing above the worktree qualifies — `~/.beads` fails the marker check and the walk refuses `$HOME` — so every command fails with:
 
 ```
 Error: no beads database found
@@ -701,7 +704,7 @@ Hint: run 'bd where' to inspect the resolved workspace, or 'bd init' to create a
 
 **Do not follow that hint. `bd init` creates a second, empty database inside the worktree** — a silent fork of the backlog that syncs nowhere. Nothing recovers from it automatically.
 
-Run bd against the main checkout instead. Derive the path rather than hardcoding it, so this works from any worktree and on either machine:
+Target the main checkout explicitly rather than relying on where the worktree happens to sit. Derive the path so this works from any worktree and on either machine:
 
 ```bash
 BD_REPO="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
@@ -713,6 +716,6 @@ command bd -C "$BD_REPO" ready
 Two consequences worth knowing:
 
 - **There is one database, not per-branch state.** Closing an issue on a feature branch closes it immediately and globally, whether or not that branch ever merges. Close when the work is done; reopen if the branch is abandoned.
-- **A worktree opened as a single-root window has no Beads repository to find.** It has no `.beads` of its own, and the upward walk will not adopt one: `~/.beads` fails the marker check, and the walk refuses `$HOME` regardless. The board says no Beads repository was found and offers the folder picker. Add the main checkout as a second workspace folder, or pick it.
+- **A worktree opened as a single-root window may have no Beads repository to find.** It has no `.beads` of its own, so the extension falls back to the same upward walk, bounded by `DEFAULT_MAX_ASCEND` (6) in `src/beadsWorkspace.ts`. A worktree nested in the main checkout sits three levels below it and resolves; from anywhere else the walk finds nothing, since `~/.beads` fails the marker check and `$HOME` is refused. In that case the board reports no Beads repository and offers the folder picker — add the main checkout as a second workspace folder, or pick it.
 
 Merging a worktree branch into `main` is unaffected. No bead data is tracked by git; it travels on `refs/dolt/data` via `scripts/bd-sync.sh`, and refs are shared across worktrees. There is nothing for a merge to conflict on. The script derives the main checkout the same way as the snippet above, so it is safe to run from a worktree.

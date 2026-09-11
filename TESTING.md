@@ -20,6 +20,27 @@ real VS Code build and runs the suites under `out/test/suite/`.
 is what `scripts/release-fork-vsix.sh` runs before packaging, so it is the thing to run
 before claiming work is done.
 
+### Why `--user-data-dir` points outside the project
+
+`.vscode-test.mjs` passes `--user-data-dir` at a hashed directory under the system temp
+dir. That line is load-bearing: without it `npm test` cannot run from any git worktree.
+
+VS Code opens its IPC socket inside the user-data dir, and macOS caps Unix domain socket
+paths at 103 characters. Left alone, `@vscode/test-electron` puts that dir at
+`<project>/.vscode-test/user-data`, so the socket path grows with the project path — 86
+characters from the main checkout, 129 from a worktree under `.claude/worktrees/`. Past
+the cap it fails with `listen EINVAL: invalid argument` before a single test runs,
+preceded by `WARNING: IPC handle ... is longer than 103 chars`.
+
+Passing `--user-data-dir` on the `npx vscode-test` command line does not work; the CLI
+does not forward it to Electron. It has to be in `launchArgs`.
+
+The hash keys the directory to the checkout, so two worktrees running tests at the same
+time do not fight over one socket.
+
+The downloaded VS Code build is a separate cache and still lives in each checkout's
+`.vscode-test/`, so a fresh worktree pays a ~300 MB download on its first `npm test`.
+
 ### The bd fixture
 
 `src/test/suite/daemonAdapter.test.ts` exercises `DaemonBeadsAdapter` against a real
