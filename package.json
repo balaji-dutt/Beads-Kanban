@@ -24,7 +24,7 @@
     "dependency-graph",
     "vscode-extension"
   ],
-  "version": "2.2.1",
+  "version": "2.2.2",
   "publisher": "balaji-dutt",
   "pricing": "Free",
   "icon": "images/icon.png",

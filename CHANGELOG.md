@@ -5,6 +5,27 @@ All notable changes to the Beads Kanban extension will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-09-11
+
+A bug-fix release. Three fixes are visible on the board: scroll position surviving a refresh, light themes rendering correctly, and the board noticing a workspace folder added after it opened. The rest is release and testing tooling. Nothing about the message protocol, the settings, or the extension ID changes, so upgrading is a straight reinstall of the VSIX.
+
+### 🐛 Bug Fixes
+
+- **The Table and Tree views no longer jump to the top when the board refreshes.** Both rebuild their contents wholesale, which destroys the element holding the scroll offset, so every time the file watcher noticed a Dolt write the viewport snapped back to the start. The Kanban view already captured and restored its per-column scroll; the other two now do the same. A refresh in the Table view also returned to page 1 — it now stays on the page you were reading, and a refresh that shrinks the results no longer strands you past the end on an empty table. Expanding or collapsing a row in the Tree view no longer jumps to the top either.
+- **Light VS Code themes rendered the board wrong, and in places invisibly.** The stylesheet assumed a dark background, so borders, surface tints and secondary text were all white at low opacity. Under a light theme that left card label chips, parent breadcrumbs, and the edit dialog's section headings and issue ID white on white — present but unreadable. Hover feedback vanished entirely on table rows, view toggles and the column picker, making those controls look unresponsive. The dialog also forced dark rendering on native widgets regardless of theme, which is why its checkboxes appeared as solid black squares. Colours now come from the VS Code theme variables that already adapt.
+- **The board ignored workspace folders added after it opened.** Resolution ran once at activation and then only when a command asked for it, so adding your Beads repository as a second workspace folder left an open board reporting no repository until it was closed and reopened. The same gap affected multi-root windows at startup, where a second root can register a moment after the extension activates. The board now re-resolves whenever the folder list changes, retargets, and reloads.
+
+### 🔧 Internal
+
+- **`scripts/bump-version.js` has automated coverage.** Its guards — the accepted version shape, refusing to reuse the current version, requiring a CHANGELOG heading, and writing nothing until every check passes — were verified only by running it by hand at release time. Nine tests now drive the real script against a temporary fixture.
+- **`npm test` runs from a git worktree.** macOS caps Unix domain socket paths at 103 characters, and VS Code opens its IPC socket inside the test user-data directory, which defaulted to a path inside the project. From any linked worktree that exceeded the cap and the suite died before a single test ran.
+- **The release script no longer leaves its VSIX behind.** Every run left one in the repository root, accumulating one per release, plus a `SHA256SUMS` from a dry run that corresponds to no release at all. Both are attached to the GitHub release, where `gh release download` reproduces them verifiably.
+- **The release script's closing pin block describes what actually maintains the pin.** It named three files to hand-edit, under their pre-2.2.0 names, in a repository this one cannot see. It now prints the release facts and nothing else.
+
+### 📚 Documentation
+
+- **`TESTING.md` records the Extension Development Host's traps.** Nothing in the suite activates the extension, so workspace resolution, the watchers and the webview are only reachable by driving the host by hand — where three behaviours that are invisible from the code have each been mistaken for a broken change.
+
 ## [2.2.1] - 2026-09-10
 
 A bug-fix release. Five of the fixes are visible on the board; the rest keep the release and testing tooling honest. Nothing about the message protocol, the settings, or the extension ID changes, so upgrading is a straight reinstall of the VSIX.
