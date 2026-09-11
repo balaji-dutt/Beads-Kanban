@@ -279,6 +279,10 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
 
+      output.appendLine(
+        `[Extension] Workspace folders changed; retargeting to ${resolution.root} (attached board: ${reloadBoard ? 'yes' : 'no'})`
+      );
+
       // Retargeted in place: ensureAdapter() disposes, and an open board holds
       // this instance.
       adapter.setWorkspaceRoot(resolution.root);
