@@ -150,6 +150,10 @@ suite), packages the VSIX, writes `SHA256SUMS`, creates the tag on the built
 commit via `--target <full-sha>`, marks the release `--latest`, and uploads the
 VSIX and `SHA256SUMS`.
 
+`SHA256SUMS` is load-bearing, not decoration. An installer that pins this
+release by checksum can read the value out of a few bytes of manifest instead of
+downloading the VSIX to hash it. Keep uploading it.
+
 > **Trap: do not run `npm run release:package` for a fork release.** That is the
 > Marketplace path (verify + `vsce package`, for a manual web upload).
 > `release-fork-vsix.sh` does its own verify and package; running both just
@@ -164,9 +168,9 @@ the backlog later:
 bd close <release-id> --reason="Released vX.Y.Z from <sha>. Published asset sha256: <sha256>."
 ```
 
-The script also prints a pin block (tag, asset name, sha256, version) for
-downstream consumers that install from the release. Consuming those values is out
-of scope for this repo.
+The script also prints a pin block — tag, asset name, sha256, version — for
+anyone installing this release from a pinned reference rather than from the
+releases page. Nothing in this repo consumes those values.
 
 ### 6. Verify the release landed
 

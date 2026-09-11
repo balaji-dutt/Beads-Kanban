@@ -3,9 +3,8 @@
 # Cuts a fork VSIX release for balajidutt/better-beads-kanban.
 #
 # This fork is not published to the VS Code Marketplace. It ships as a VSIX
-# attached to a GitHub release, which the dotfiles repo installs from a pinned
-# tag + asset name + SHA256. This script produces all three and prints them in
-# the shape those pinned scripts expect.
+# attached to a GitHub release, which downstream installers pin by tag + asset
+# name + SHA256. This script produces all three and prints them.
 #
 # The VSIX filename carries the branch and short SHA so a downloaded asset can
 # be identified without guessing, but package.json is packaged exactly as
@@ -101,9 +100,9 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-bd\.[0-9]+)?$ ]]; then
   exit 1
 fi
 
-# Tag and asset are derivable from the version alone, deliberately. The dotfiles
-# repo pins this release by tag + asset name + sha256 and wants Renovate to
-# maintain that pin; a regex manager can build "v2.2.0" and
+# Tag and asset are derivable from the version alone, deliberately. Downstream
+# installers pin this release by tag + asset name + sha256, and an automated pin
+# updater can build "v2.2.0" and
 # "better-beads-kanban-2.2.0.vsix" from a version string, but could never have
 # reconstructed the previous "-${BRANCH}-${SHA}" forms. Traceability is not lost:
 # the release is created with --target ${FULL_SHA}, and the body names the
@@ -199,19 +198,13 @@ fi
 
 cat <<EOF
 
-Pin values for the dotfiles install scripts:
+Pin values for downstream installers:
 
   TAG="${TAG}"
   ASSET="${TARGET_VSIX}"
   EXPECTED_SHA="${EXPECTED_SHA}"
-  FORK_VERSION="${VERSION}"
+  VERSION="${VERSION}"
 
-Update all three of:
-  .chezmoiscripts/run_onchange_after_install_beads_kanban_bd_fixes.sh.tmpl
-  .chezmoiscripts/run_onchange_after_install_beads_kanban_bd_fixes.ps1.tmpl
-  private_Documents/.../dot_devcontainer/devcontainer-common.sh
-
-The two chezmoi scripts also carry the tag and sha in a header comment — that
-comment is the run_onchange hash trigger, so it has to change too or the script
-will not re-run.
+The same checksum is published as the release's SHA256SUMS asset, so an
+automated pin can pick it up without downloading the VSIX.
 EOF
