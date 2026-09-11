@@ -260,6 +260,29 @@ export function activate(context: vscode.ExtensionContext) {
 
   ensureAdapter();
 
+  // A multi-root window can register its second root after activation, and
+  // folders can be added or removed at any point in a session. Nothing else
+  // re-resolves for a board that is already open.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      const resolution = resolveRoot();
+      if (!resolution.root || resolution.root === adapterWorkspaceRoot) {
+        return;
+      }
+
+      if (!adapter) {
+        ensureAdapter();
+        return;
+      }
+
+      // Retargeted in place: ensureAdapter() disposes, and an open board holds
+      // this instance.
+      adapter.setWorkspaceRoot(resolution.root);
+      adapterWorkspaceRoot = resolution.root;
+      rebindWatchers?.(resolution.root);
+    })
+  );
+
   const openCmd = vscode.commands.registerCommand("beadsKanban.openBoard", async () => {
     const resolution = resolveRoot();
     if (!resolution.root) {
