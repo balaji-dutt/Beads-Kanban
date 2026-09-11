@@ -1119,8 +1119,23 @@ function getCardsByColumn(cards) {
     return byColumn;
 }
 
+// Every view rebuilds through innerHTML, which destroys the element holding the
+// scroll offset. Restoring has to wait a tick: the replacement element has no
+// scrollHeight until the browser has laid it out, and assigning scrollTop before
+// then silently clamps to 0.
+function restoreScrollTop(el, top) {
+    if (!el || !top) {
+        return;
+    }
+    setTimeout(() => {
+        el.scrollTop = top;
+    }, 0);
+}
+
 // Dispatch to the appropriate render function based on view mode
-function render() {
+// resetPage is false for live data refreshes, which must neither move the user
+// off the page they are reading nor scroll them away from where they were.
+function render({ resetPage = true } = {}) {
 
     if (!columns || columns.length === 0) {
 
@@ -1150,14 +1165,16 @@ function render() {
     }
 
     // Reset table pagination when filters/sort changes (user likely wants to see results from page 1)
-    tablePaginationState.currentPage = 0;
+    if (resetPage) {
+        tablePaginationState.currentPage = 0;
+    }
 
     if (viewMode === 'graph') {
         renderGraph();
     } else if (viewMode === 'table') {
-        renderTable();
+        renderTable(!resetPage);
     } else if (viewMode === 'tree') {
-        renderTree();
+        renderTree(!resetPage);
     } else {
         renderKanban();
     }
@@ -1549,13 +1566,7 @@ function renderKanban() {
             dropZone.appendChild(loadMoreDiv);
         }
 
-        // Restore scroll position for this column
-        if (scrollPositions.has(col.key)) {
-            // Use setTimeout to ensure DOM is fully rendered before scrolling
-            setTimeout(() => {
-                dropZone.scrollTop = scrollPositions.get(col.key);
-            }, 0);
-        }
+        restoreScrollTop(dropZone, scrollPositions.get(col.key));
 
         colWrap.appendChild(header);
         colWrap.appendChild(dropZone);
@@ -1652,6 +1663,14 @@ function loadTablePage(page = null) {
 
     // Calculate pagination
     const totalCount = sortedCards.length;
+
+    // A refresh that shrinks the result set can leave currentPage past the end,
+    // which slices to nothing and renders an empty table with no way back.
+    const lastPage = totalCount === 0 ? 0 : Math.ceil(totalCount / tablePaginationState.pageSize) - 1;
+    if (tablePaginationState.currentPage > lastPage) {
+        tablePaginationState.currentPage = lastPage;
+    }
+
     const offset = tablePaginationState.currentPage * tablePaginationState.pageSize;
     const limit = tablePaginationState.pageSize;
     
@@ -1668,7 +1687,11 @@ function loadTablePage(page = null) {
 }
 
 // Table view rendering (synchronous - uses in-memory cardCache)
-function renderTable() {
+// holdViewport keeps the scroll offset across the rebuild. Callers that changed
+// what is being shown - filtering, sorting, paging - leave it false, because
+// carrying the old offset into a shorter result set lands the user at the
+// bottom of it instead of the top.
+function renderTable(holdViewport = false) {
 
 
     // Load current page from cardCache with filters and sorting (instant)
@@ -1786,8 +1809,12 @@ function renderTable() {
         </div>
     `;
 
+    const tableScrollTop = holdViewport ? boardEl.querySelector('.table-wrapper')?.scrollTop : 0;
+
     // Apply DOMPurify to table HTML for defense-in-depth
     boardEl.innerHTML = DOMPurify.sanitize(tableHtml, purifyConfig);
+
+    restoreScrollTop(boardEl.querySelector('.table-wrapper'), tableScrollTop);
 
     // Add page size selector handler with cleanup and debouncing
     const pageSizeSelect = document.getElementById('pageSizeSelect');
@@ -2039,13 +2066,14 @@ function toggleTreeNode(id, depth, renderedExpanded) {
         treeState.expandedOverrides[id] = next;
     }
     saveState();
-    renderTree();
+    // The row whose caret was clicked stays under the pointer.
+    renderTree(true);
 }
 
 // Tree view rendering. Builds the displayed hierarchy from cardCache via
 // the pure treeBuilder helpers, then renders flat rows whose connector
 // lines (vertical guides + tee/elbow joiners) are drawn entirely in CSS.
-function renderTree() {
+function renderTree(holdViewport = false) {
     const matched = getFilteredCards();
     const matchedIds = new Set(matched.map(c => c.id));
     // Auto-expand only when the user has narrowed the board beyond the
@@ -2112,8 +2140,12 @@ function renderTree() {
         </div>
     `;
 
+    const treeScrollTop = holdViewport ? boardEl.querySelector('.tree-rows')?.scrollTop : 0;
+
     // Apply DOMPurify to tree HTML for defense-in-depth
     boardEl.innerHTML = DOMPurify.sanitize(treeHtml, purifyConfig);
+
+    restoreScrollTop(boardEl.querySelector('.tree-rows'), treeScrollTop);
 
     // The elements below are recreated on every renderTree() call (innerHTML
     // replacement), so attaching fresh listeners here cannot accumulate.
@@ -2830,7 +2862,7 @@ window.addEventListener("message", (event) => {
         // so the first paint reflects the user's saved preferences.
         applyPersistedUIState(msg.payload.uiState);
 
-        render();
+        render({ resetPage: false });
         hideLoading();
 
         // Resolve any pending request waiting for board data
@@ -2903,7 +2935,7 @@ window.addEventListener("message", (event) => {
         // view mode are reflected immediately on fast-loading boot.
         applyPersistedUIState(msg.payload.uiState);
 
-        render();
+        render({ resetPage: false });
         hideLoading();
 
         // Resolve any pending request waiting for board data
