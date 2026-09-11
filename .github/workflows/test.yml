@@ -1,23 +1,38 @@
 name: Test Suite
 
-# main is the fork's line as of 2.2.0, and the branch the VSIX is built from.
-# integration/bd-fixes was the merge target until then and no longer needs its
-# own trigger. Feature branches get covered by their pull request; local
-# verification is macOS only, and the VSIX is consumed by Linux devcontainers.
+# Every push runs the suite, including feature branches. There is no pull
+# request step here — work merges to main locally — so a branch first checked
+# after that merge is checked too late to act on.
+#
+# A branch push runs one job; main, pull requests and manual dispatch run the
+# full matrix. The split keeps a branch fast enough to wait on, and the rare
+# cross-platform break is still caught on main before any release is cut. The
+# matrix exists because local verification is macOS on a single Node version,
+# and the VSIX is consumed by Linux devcontainers.
 on:
   push:
-    branches: [ main ]
+    branches: [ "**" ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+
+# Superseded runs on the same ref are pointless once a newer commit exists, and
+# feature branches get pushed repeatedly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
+      # There is no conditional matrix in Actions; `cond && fromJSON(a) ||
+      # fromJSON(b)` is the idiom, and it works because a non-empty array is
+      # truthy. The condition is repeated per key because `strategy` cannot see
+      # the `env` context.
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [20.x, 22.x]
+        os: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+        node-version: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && fromJSON('["22.x"]') || fromJSON('["20.x", "22.x"]') }}
       fail-fast: false
 
     steps:
@@ -50,6 +65,9 @@ jobs:
         npx @vscode/vsce package --no-dependencies
         FILECOUNT=$(npx @vscode/vsce ls *.vsix 2>/dev/null | wc -l)
         echo "VSIX contains $FILECOUNT files"
+        # A tripwire for the bundler collapsing back to unbundled output, which
+        # lands in the hundreds. Deliberately looser than the range RELEASING.md
+        # has you eyeball at release time, so ordinary additions do not fail CI.
         if [ "$FILECOUNT" -gt 50 ]; then
           echo "ERROR: VSIX has too many files ($FILECOUNT). Expected under 50. Bundling may be broken."
           exit 1
