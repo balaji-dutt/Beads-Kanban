@@ -4,11 +4,11 @@ name: Test Suite
 # request step here — work merges to main locally — so a branch first checked
 # after that merge is checked too late to act on.
 #
-# A branch push runs one job; main, pull requests and manual dispatch run the
-# full matrix. The split keeps a branch fast enough to wait on, and the rare
-# cross-platform break is still caught on main before any release is cut. The
-# matrix exists because local verification is macOS on a single Node version,
-# and the VSIX is consumed by Linux devcontainers.
+# Every ref gets the full matrix. It costs about 24 seconds of wall clock over
+# a single job — 93s against 69s, measured — which is not worth trading
+# cross-platform coverage for. The matrix earns its place because local
+# verification is macOS on a single Node version, and the VSIX is consumed by
+# Linux devcontainers.
 on:
   push:
     branches: [ "**" ]
@@ -26,13 +26,9 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
-      # There is no conditional matrix in Actions; `cond && fromJSON(a) ||
-      # fromJSON(b)` is the idiom, and it works because a non-empty array is
-      # truthy. The condition is repeated per key because `strategy` cannot see
-      # the `env` context.
       matrix:
-        os: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') }}
-        node-version: ${{ (github.event_name == 'push' && github.ref != 'refs/heads/main') && fromJSON('["22.x"]') || fromJSON('["20.x", "22.x"]') }}
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [20.x, 22.x]
       fail-fast: false
 
     steps:
