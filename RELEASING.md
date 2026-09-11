@@ -12,10 +12,11 @@ runbook was removed in bbk-vi1; if you find instructions anywhere that mention
 The repo is owned by the `balajidutt` GitHub account, which is separate from the
 account `gh` is normally logged in as. Two consequences:
 
-- `origin` uses the `github-balajidutt` SSH host alias, not `github.com`. The
-  alias and its key are provisioned by the `private-dotfiles` chezmoi source. On
-  Windows there is no keychain, so run `ssh-add` on the key once per session or
-  every push prompts for the passphrase.
+- `origin` uses the `github-balajidutt` SSH host alias, not `github.com`, so a
+  push resolves through that account's key rather than the machine default. The
+  alias is a `Host` block in `~/.ssh/config`. On Windows there is no keychain,
+  so run `ssh-add` on the key once per session or every push prompts for the
+  passphrase.
 - **You do not need to switch `gh` accounts by hand to cut a release.**
   `scripts/release-fork-vsix.sh` borrows the `balajidutt` identity for its own
   run and restores the previous active account on exit. It refuses to run if
