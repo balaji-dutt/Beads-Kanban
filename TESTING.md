@@ -8,6 +8,7 @@ This document describes the testing infrastructure for the Better Beads Kanban V
 - [Writing a Test](#writing-a-test)
 - [Integration Tests](#integration-tests)
 - [Visual Testing](#visual-testing)
+- [The Extension Development Host](#the-extension-development-host)
 - [Manual QA Before a Release](#manual-qa-before-a-release)
 - [Continuous Improvement](#continuous-improvement)
 
@@ -212,6 +213,32 @@ Four things that are easy to lose an hour to:
   modality — `:focus-visible` above all — answers differently for a scripted click than
   for a dispatched one. A synthetic click will tell you a focus ring does not exist when
   a real user sees it on every keyboard-driven open.
+
+## The Extension Development Host
+
+Workspace resolution, the file watchers and the webview are only reachable by
+pressing F5 and driving the development host by hand — no automated suite
+activates the extension. Three traps, each of which has already cost a debugging
+session.
+
+**You cannot open the F5 host's own workspace folder in the development host.**
+Testing this repo against this repo does not work, so reach for another folder:
+`dotfiles` when you need a real Beads database, a scratch directory when you need
+one *without* a database.
+
+**`Add Folder to Workspace` keeps the extension host; `File > Open Folder`
+restarts it.** The output channel is the tell — a restart prints a second
+`[BeadsAdapter] Environment Versions` banner. This matters when testing how the
+extension reacts to the workspace changing: if the host restarted, you tested
+activation instead, and activation resolves correctly on its own.
+
+**A board tab outlives a host restart, and the survivor is inert.** The tab stays
+and keeps rendering its last cards, but nothing re-adopts it — there is no
+`registerWebviewPanelSerializer`. Clicking Refresh logs nothing whatsoever,
+because the message handler belonged to the host that went away. So before
+concluding a change did nothing, check the log for a second banner and for a
+matching `=== Opening Beads Kanban Board ===`; if that second line is missing you
+are looking at a dead panel, not a bug. Tracked in the backlog.
 
 ## Manual QA Before a Release
 
