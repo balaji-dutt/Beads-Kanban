@@ -215,6 +215,10 @@ export function activate(context: vscode.ExtensionContext) {
   // which would otherwise stay pointed at the previous repository.
   let rebindWatchers: ((root: string) => void) | null = null;
 
+  // Companion to rebindWatchers: retargeting the adapter leaves an open board
+  // showing the previous repository's cards, and only the panel can re-send them.
+  let reloadBoard: (() => void) | null = null;
+
   /**
    * Prompt for a folder containing `.beads`, persist it, and retarget the
    * adapter. Returns the chosen path, or null if the user cancelled or picked
@@ -280,6 +284,7 @@ export function activate(context: vscode.ExtensionContext) {
       adapter.setWorkspaceRoot(resolution.root);
       adapterWorkspaceRoot = resolution.root;
       rebindWatchers?.(resolution.root);
+      reloadBoard?.();
     })
   );
 
@@ -1149,6 +1154,12 @@ export function activate(context: vscode.ExtensionContext) {
       attachWatchers(watchedRoot);
       rebindWatchers = attachWatchers;
 
+      const resendBoard = () => {
+        output.appendLine('[Extension] Repository changed; reloading board');
+        void sendBoard(`root-${Date.now()}`);
+      };
+      reloadBoard = resendBoard;
+
       panel.onDidDispose(() => {
         output.appendLine('[Extension] Panel disposed');
         isDisposed = true;
@@ -1173,6 +1184,9 @@ export function activate(context: vscode.ExtensionContext) {
         // will have replaced it and is still using it.
         if (rebindWatchers === attachWatchers) {
           rebindWatchers = null;
+        }
+        if (reloadBoard === resendBoard) {
+          reloadBoard = null;
         }
         for (const existing of watchers) {
           existing.dispose();
